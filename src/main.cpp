@@ -19,40 +19,51 @@ void run(App &app) {
     models.emplace_back(app, "../assets/cube.glb");
     Scene scene(app, models);
 
-    RTCIntersectArguments args;
-    rtcInitIntersectArguments(&args);
+    auto e = app.queue.submit([&](sycl::handler &cgh) {
+        sycl::stream os(1024, 256, cgh);
+        RTCScene r_scene = scene.scene;
 
-    std::vector<float3> directions = {
-        float3(0.0f, 0.0f, 1.0f), float3(0.0f, 0.0f, -1.0f),
-        float3(0.0f, 1.0f, 0.0f), float3(0.0f, -1.0f, 0.0f),
-        float3(1.0f, 0.0f, 0.0f), float3(-1.0f, 0.0f, 0.0f),
-    };
+        cgh.single_task<class test>([=]() {
+            RTCIntersectArguments args;
+            rtcInitIntersectArguments(&args);
 
-    for (auto &dir : directions) {
-        std::cout << "Shooting ray: " << dir[0] << " " << dir[1] << " " << dir[2] << std::endl;
-        RTCRayHit rayhit = {};
-        rayhit.ray.org_x = 3.0f;
-        rayhit.ray.org_y = 0.0f;
-        rayhit.ray.org_z = 0.0f;
-        rayhit.ray.dir_x = dir[0];
-        rayhit.ray.dir_y = dir[1];
-        rayhit.ray.dir_z = dir[2];
-        rayhit.ray.tnear = 0;
-        rayhit.ray.tfar = std::numeric_limits<float>::infinity();
-        rayhit.ray.mask = -1;
-        rayhit.ray.flags = 0;
-        rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
-        rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+            std::array<float3, 6> directions = {
+                float3(0.0f, 0.0f, 1.0f), float3(0.0f, 0.0f, -1.0f),
+                float3(0.0f, 1.0f, 0.0f), float3(0.0f, -1.0f, 0.0f),
+                float3(1.0f, 0.0f, 0.0f), float3(-1.0f, 0.0f, 0.0f),
+            };
 
-        rtcIntersect1(scene.scene, &rayhit, &args);
+            for (auto &dir : directions) {
+                os << "Shooting ray: " << dir[0] << " " << dir[1] << " "
+                          << dir[2] << sycl::endl;
+                RTCRayHit rayhit = {};
+                rayhit.ray.org_x = 3.0f;
+                rayhit.ray.org_y = 0.0f;
+                rayhit.ray.org_z = 0.0f;
+                rayhit.ray.dir_x = dir[0];
+                rayhit.ray.dir_y = dir[1];
+                rayhit.ray.dir_z = dir[2];
+                rayhit.ray.tnear = 0;
+                rayhit.ray.tfar = std::numeric_limits<float>::infinity();
+                rayhit.ray.mask = -1;
+                rayhit.ray.flags = 0;
+                rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+                rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
 
-        if (rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID) {
-            std::cout << "Hit geometry ID: " << rayhit.hit.geomID << std::endl;
-            std::cout << "Hit instance ID: " << rayhit.hit.instID[0]
-                      << std::endl;
-            std::cout << "Hit distance: " << rayhit.ray.tfar << std::endl;
-        }
-    }
+                rtcIntersect1(r_scene, &rayhit, &args);
+
+                if (rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID) {
+                    os << "Hit geometry ID: " << rayhit.hit.geomID
+                       << sycl::endl;
+                    os << "Hit instance ID: " << rayhit.hit.instID[0]
+                       << sycl::endl;
+                    os << "Hit distance: " << rayhit.ray.tfar << sycl::endl;
+                }
+            }
+        });
+    });
+
+    e.wait_and_throw();
 }
 
 int main(int argc, char *argv[]) {

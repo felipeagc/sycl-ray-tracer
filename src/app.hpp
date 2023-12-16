@@ -18,6 +18,16 @@ static auto exception_handler = [](sycl::exception_list e_list) {
     }
 };
 
+static void enablePersistentJITCache() {
+#if defined(_WIN32)
+    _putenv_s("SYCL_CACHE_PERSISTENT", "1");
+    _putenv_s("SYCL_CACHE_DIR", "gpucache");
+#else
+    setenv("SYCL_CACHE_PERSISTENT", "1", 1);
+    setenv("SYCL_CACHE_DIR", "gpucache", 1);
+#endif
+}
+
 struct App {
     sycl::device sycl_device;
     sycl::queue queue;
@@ -31,6 +41,8 @@ struct App {
     App &operator=(App &&) = delete;
 
     App() {
+        enablePersistentJITCache();
+
         this->sycl_device = sycl::device(rtcSYCLDeviceSelector);
         this->queue = sycl::queue(this->sycl_device, exception_handler);
         this->context = sycl::context(this->sycl_device);
