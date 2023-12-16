@@ -1,0 +1,10 @@
+---
+SortIncludes: false
+BasedOnStyle: Google
+IndentWidth: 4
+# AlignAfterOpenBracket: BlockIndent
+AllowShortBlocksOnASingleLine: Empty
+# AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+InsertBraces: true

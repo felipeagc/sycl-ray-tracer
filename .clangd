@@ -1,0 +1,4 @@
+CompileFlags:
+  Add: [-I/opt/intel/oneapi/compiler/latest/include, -I/opt/intel/oneapi/compiler/latest/include/sycl, -DSYCL_LANGUAGE_VERSION=202001]
+  Remove: [-fsycl]
+  # Compiler: icpx
