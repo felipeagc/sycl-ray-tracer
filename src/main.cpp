@@ -30,7 +30,7 @@ static float3 render_pixel(
     rtcInitIntersectArguments(&args);
 
     RTCRayHit rayhit;
-    rayhit.ray = camera.get_ray(x, y);
+    rayhit.ray = camera.get_ray(x, y, rng);
     rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
     rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
 
@@ -66,7 +66,7 @@ void render_frame(App &app, range<2> img_size, sycl::image<2> &image) {
         n_groups[0] = ((img_size[0] + local_size[0] - 1) / local_size[0]);
         n_groups[1] = ((img_size[1] + local_size[1] - 1) / local_size[1]);
 
-        Camera camera(img_size, float3(3, 0, 0), float3(0, 0, 0));
+        Camera camera(img_size, float3(3, 3, 3), float3(0, 0, 0));
 
         cgh.parallel_for(
             sycl::nd_range<2>(n_groups * local_size, local_size),
@@ -91,7 +91,8 @@ void render_frame(App &app, range<2> img_size, sycl::image<2> &image) {
                 auto rng = XorShift32State{(uint32_t)init_generator_state};
 
                 uint32_t ray_count = 0;
-                float3 pixel_color = render_pixel(camera, rng, r_scene, x, y, &ray_count, os);
+                float3 pixel_color =
+                    render_pixel(camera, rng, r_scene, x, y, &ray_count, os);
 
                 image_writer.write(
                     int2(x, y),

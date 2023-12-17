@@ -7,12 +7,7 @@
 namespace raytracer {
 
 struct Camera {
-    sycl::range<2> img_size;
-
-    float focal_length;
     sycl::float3 center;
-    sycl::float3 up;
-    sycl::float3 right;
 
     sycl::float3 pixel00_loc;
     sycl::float3 pixel_delta_u;
@@ -22,67 +17,34 @@ struct Camera {
     static constexpr int max_bounces = 100;
 
     Camera(sycl::range<2> img_size, sycl::float3 center, sycl::float3 look_at)
-        : img_size(img_size), center(center) {
+        : center(center) {
         using sycl::float2;
         using sycl::float3;
 
         // Setup camera
-        this->focal_length = 1.0f;
+        float focal_length = 1.0f;
 
-        auto dir = normalize(look_at - center);
-        std::cout << "camera direction: " << dir.x() << ", " << dir.y() << ", " << dir.z()
-                  << std::endl;
-        auto world_up = float3(0, 1, 0);
-        this->right = normalize(cross(dir, world_up));
-        std::cout << "camera right: " << right.x() << ", " << right.y() << ", "
-                  << right.z() << std::endl;
-        this->up = normalize(cross(right, dir));
-        std::cout << "camera up: " << up.x() << ", " << up.y() << ", " << up.z()
-                  << std::endl;
+        float3 dir = normalize(look_at - center);
+        float3 world_up = float3(0, 1, 0);
+        float3 right = normalize(cross(dir, world_up));
+        float3 up = normalize(cross(right, dir));
 
         float2 viewport = float2(1.0f * ((float)img_size[0] / (float)img_size[1]), 1.0f);
 
-        // Calculate the vectors across the horizontal and down the vertical
-        // viewport edges.
-        float3 viewport_u = (-this->right) * viewport[0];
-        float3 viewport_v = this->up * viewport[1];
-        std::cout << "viewport_u: " << viewport_u.x() << ", " << viewport_u.y() << ", "
-                  << viewport_u.z() << std::endl;
-        std::cout << "viewport_v: " << viewport_v.x() << ", " << viewport_v.y() << ", "
-                  << viewport_v.z() << std::endl;
+        float3 viewport_u = (-right) * viewport[0];
+        float3 viewport_v = up * viewport[1];
 
-        this->pixel00_loc =
-            this->center + viewport_u + viewport_v + dir * this->focal_length;
-        std::cout << "pixel00_loc: " << pixel00_loc.x() << ", " << pixel00_loc.y() << ", "
-                  << pixel00_loc.z() << std::endl;
+        this->pixel00_loc = this->center + viewport_u + viewport_v + dir * focal_length;
 
-        this->pixel_delta_u = this->right / ((float)img_size[0] / (viewport[0] * 2.0f));
-        this->pixel_delta_v = this->up / ((float)img_size[1] / (viewport[1] * 2.0f));
-
-        std::cout << "pixel_delta_u: " << pixel_delta_u.x() << ", " << pixel_delta_u.y()
-                  << ", " << pixel_delta_u.z() << std::endl;
-        std::cout << "pixel_delta_v: " << pixel_delta_v.x() << ", " << pixel_delta_v.y()
-                  << ", " << pixel_delta_v.z() << std::endl;
-
-        RTCRay test_ray = this->get_ray(1920, 1080);
-        std::cout << "test_ray orig: " << test_ray.org_x << ", " << test_ray.org_y << ", "
-                  << test_ray.org_z << std::endl;
-        test_ray.org_x += test_ray.dir_x;
-        test_ray.org_y += test_ray.dir_y;
-        test_ray.org_z += test_ray.dir_z;
-        std::cout << "test_ray dest: " << test_ray.org_x << ", " << test_ray.org_y << ", "
-                  << test_ray.org_z << std::endl;
+        this->pixel_delta_u = right / ((float)img_size[0] / (viewport[0] * 2.0f));
+        this->pixel_delta_v = -up / ((float)img_size[1] / (viewport[1] * 2.0f));
     }
 
     // Get a randomly sampled camera ray for the pixel at location x,y.
-    RTCRay get_ray(
-        int x, int y
-        /* , XorShift32State &rng */
-    ) const {
+    RTCRay get_ray(int x, int y, XorShift32State &rng) const {
         auto pixel_center =
-            pixel00_loc + ((float)x * pixel_delta_u) - ((float)y * pixel_delta_v);
-        auto pixel_sample = pixel_center;
-        /* auto pixel_sample = pixel_center + pixel_sample_square(rng); */
+            pixel00_loc + ((float)x * pixel_delta_u) + ((float)y * pixel_delta_v);
+        auto pixel_sample = pixel_center + pixel_sample_square(rng);
 
         auto ray_origin = this->center;
         auto ray_direction = pixel_sample - ray_origin;
