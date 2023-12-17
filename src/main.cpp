@@ -30,7 +30,7 @@ static float3 render_pixel(
     rtcInitIntersectArguments(&args);
 
     RTCRayHit rayhit;
-    rayhit.ray = camera.get_ray(x, y, rng);
+    rayhit.ray = camera.get_ray(x, y);
     rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
     rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
 
