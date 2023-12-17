@@ -2,7 +2,6 @@
 
 #include <sycl/sycl.hpp>
 #include "stb_image_write.h"
-#include "tiny_gltf.h"
 
 namespace raytracer {
 
