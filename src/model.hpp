@@ -1,5 +1,6 @@
 #pragma once
 
+#include <embree4/rtcore_geometry.h>
 #include <stdexcept>
 #include <string>
 #include <sycl/sycl.hpp>
@@ -28,6 +29,24 @@ template <> struct ::fmt::formatter<glm::vec3> {
     }
 };
 
+template <> struct ::fmt::formatter<glm::mat4> {
+    constexpr auto parse(format_parse_context &ctx) -> format_parse_context::iterator {
+        auto it = ctx.begin(), end = ctx.end();
+        if (it != end && *it != '}') throw_format_error("invalid format");
+        return it;
+    }
+
+    auto format(glm::mat4 m, fmt::format_context &ctx) {
+        auto appender = ctx.out();
+        for (int i = 0; i < 4; ++i) {
+            appender = fmt::format_to(
+                appender, "{} {} {} {}\n", m[i][0], m[i][1], m[i][2], m[i][3]
+            );
+        }
+        return appender;
+    }
+};
+
 namespace raytracer {
 
 struct Primitive {
@@ -44,6 +63,10 @@ struct Mesh {
 struct Node {
     std::optional<uint32_t> parent = {};
     std::vector<RTCGeometry> geometries = {};
+    glm::vec3 translation{};
+    glm::vec3 scale{1.0f};
+    glm::quat rotation{};
+    glm::mat4 matrix{1.0f};
 
     Node() = default;
 
@@ -52,6 +75,11 @@ struct Node {
 
     Node(Node &&other) = default;
     Node &operator=(Node &&other) = default;
+
+    glm::mat4 local_matrix() const {
+        return glm::translate(glm::mat4(1.0f), translation) * glm::mat4(rotation) *
+               glm::scale(glm::mat4(1.0f), scale) * matrix;
+    }
 
     ~Node() {
         for (auto geom : this->geometries) {
@@ -97,6 +125,17 @@ struct Model {
             uint32_t node_index = scene.nodes[i];
             this->load_node(app, gltf_model, scene.nodes[i], {});
         }
+    }
+
+    glm::mat4 node_global_matrix(const Node &node) const {
+        glm::mat4 m = node.local_matrix();
+        std::optional<uint32_t> p = node.parent;
+        while (p) {
+            const Node &parent = nodes[p.value()];
+            m = parent.local_matrix() * m;
+            p = parent.parent;
+        }
+        return m;
     }
 
     void load_primitives(App &app, const tinygltf::Model &gltf_model) {
@@ -206,31 +245,26 @@ struct Model {
     ) {
         const tinygltf::Node &gltf_node = gltf_model.nodes[node_index];
         Node &node = this->nodes[node_index];
+        node.parent = parent_index;
 
-        // Generate local node matrix
-        glm::vec3 translation = glm::vec3(0.0f);
-        glm::mat4 rotation = glm::mat4(1.0f);
-        glm::vec3 scale = glm::vec3(1.0f);
-        glm::mat4 matrix = glm::mat4(1.0f);
+        if (gltf_node.translation.size() == 3) {
+            node.translation = glm::make_vec3(gltf_node.translation.data());
+        }
+        if (gltf_node.rotation.size() == 4) {
+            node.rotation = glm::make_quat(gltf_node.rotation.data());
+        }
+        if (gltf_node.scale.size() == 3) {
+            node.scale = glm::make_vec3(gltf_node.scale.data());
+        }
+        if (gltf_node.matrix.size() == 16) {
+            node.matrix = glm::make_mat4x4(gltf_node.matrix.data());
+        }
 
         // Node with children
         if (gltf_node.children.size() > 0) {
             for (uint32_t child_index : gltf_node.children) {
                 load_node(app, gltf_model, child_index, node_index);
             }
-        }
-
-        if (gltf_node.translation.size() == 3) {
-            translation = glm::make_vec3(gltf_node.translation.data());
-        }
-        if (gltf_node.rotation.size() == 4) {
-            glm::quat q = glm::make_quat(gltf_node.rotation.data());
-        }
-        if (gltf_node.scale.size() == 3) {
-            scale = glm::make_vec3(gltf_node.scale.data());
-        }
-        if (gltf_node.matrix.size() == 16) {
-            matrix = glm::make_mat4x4(gltf_node.matrix.data());
         }
 
         // Node contains mesh data
@@ -266,6 +300,12 @@ struct Model {
                     0,
                     3 * sizeof(uint32_t),
                     triangle_count
+                );
+
+                glm::mat4 global_transform = this->node_global_matrix(node);
+                fmt::println("Global transform: {}", global_transform);
+                rtcSetGeometryTransform(
+                    *geom, 0, RTC_FORMAT_FLOAT4X4_COLUMN_MAJOR, &global_transform[0][0]
                 );
 
                 rtcCommitGeometry(*geom);
