@@ -1,3 +1,5 @@
+#include <fmt/core.h>
+
 #include "render.hpp"
 
 int main(int argc, char *argv[]) {

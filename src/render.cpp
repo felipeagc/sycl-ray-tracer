@@ -5,6 +5,8 @@
 #include <sycl/sycl.hpp>
 #include <embree4/rtcore.h>
 
+#include "util.hpp"
+
 using sycl::float2;
 using sycl::float3;
 using sycl::float4;

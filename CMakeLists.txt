@@ -13,6 +13,7 @@ set(
     SYCL_SOURCES
     src/main.cpp
     src/render.cpp
+    src/scene.cpp
 )
 
 set(
