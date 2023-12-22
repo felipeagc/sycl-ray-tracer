@@ -54,6 +54,8 @@ struct Primitive {
     size_t position_count;
     uint32_t *indices;
     uint32_t index_count;
+
+    RTCScene scene;
 };
 
 struct Mesh {
@@ -93,6 +95,7 @@ struct Node {
 struct Model {
     std::vector<Node> nodes;
     std::vector<Mesh> meshes;
+    glm::vec3 global_scale;
 
     Model(const Model &) = delete;
     Model &operator=(const Model &) = delete;
@@ -100,7 +103,10 @@ struct Model {
     Model(Model &&) = default;
     Model &operator=(Model &&) = default;
 
-    Model(App &app, const std::string &filepath) {
+    Model(
+        App &app, const std::string &filepath, glm::vec3 global_scale = {1.0f, 1.0f, 1.0f}
+    )
+        : global_scale(global_scale) {
         tinygltf::Model gltf_model;
         tinygltf::TinyGLTF loader;
         std::string err;
@@ -128,7 +134,7 @@ struct Model {
     }
 
     glm::mat4 node_global_matrix(const Node &node) const {
-        glm::mat4 m = node.local_matrix();
+        glm::mat4 m = node.local_matrix() * glm::scale(glm::mat4(1.0f), this->global_scale);
         std::optional<uint32_t> p = node.parent;
         while (p) {
             const Node &parent = nodes[p.value()];
@@ -233,6 +239,43 @@ struct Model {
                     );
                     assert(0);
                 }
+
+                // Create geometry and scene for instancing later
+
+                RTCGeometry geom =
+                    rtcNewGeometry(app.embree_device, RTC_GEOMETRY_TYPE_TRIANGLE);
+
+                rtcSetSharedGeometryBuffer(
+                    geom,
+                    RTC_BUFFER_TYPE_VERTEX,
+                    0,
+                    RTC_FORMAT_FLOAT3,
+                    primitive.positions,
+                    0,
+                    sizeof(glm::vec3),
+                    primitive.position_count
+                );
+
+                assert(prim.index_count % 3 == 0);
+                uint32_t triangle_count = primitive.index_count / 3;
+                rtcSetSharedGeometryBuffer(
+                    geom,
+                    RTC_BUFFER_TYPE_INDEX,
+                    0,
+                    RTC_FORMAT_UINT3,
+                    primitive.indices,
+                    0,
+                    3 * sizeof(uint32_t),
+                    triangle_count
+                );
+
+                rtcCommitGeometry(geom);
+
+                primitive.scene = rtcNewScene(app.embree_device);
+                rtcAttachGeometry(primitive.scene, geom);
+                rtcCommitScene(primitive.scene);
+
+                rtcReleaseGeometry(geom);
             }
         }
     }
@@ -276,38 +319,14 @@ struct Model {
             for (size_t i = 0; i < mesh.primitives.size(); ++i) {
                 Primitive &prim = mesh.primitives[i];
                 RTCGeometry *geom = &node.geometries[i];
-                *geom = rtcNewGeometry(app.embree_device, RTC_GEOMETRY_TYPE_TRIANGLE);
-
-                rtcSetSharedGeometryBuffer(
-                    *geom,
-                    RTC_BUFFER_TYPE_VERTEX,
-                    0,
-                    RTC_FORMAT_FLOAT3,
-                    prim.positions,
-                    0,
-                    sizeof(glm::vec3),
-                    prim.position_count
-                );
-
-                assert(prim.index_count % 3 == 0);
-                uint32_t triangle_count = prim.index_count / 3;
-                rtcSetSharedGeometryBuffer(
-                    *geom,
-                    RTC_BUFFER_TYPE_INDEX,
-                    0,
-                    RTC_FORMAT_UINT3,
-                    prim.indices,
-                    0,
-                    3 * sizeof(uint32_t),
-                    triangle_count
-                );
-
+                *geom = rtcNewGeometry(app.embree_device, RTC_GEOMETRY_TYPE_INSTANCE);
+                rtcSetGeometryTimeStepCount(*geom, 1);
+                rtcSetGeometryInstancedScene(*geom, prim.scene);
                 glm::mat4 global_transform = this->node_global_matrix(node);
                 fmt::println("Global transform: {}", global_transform);
                 rtcSetGeometryTransform(
                     *geom, 0, RTC_FORMAT_FLOAT4X4_COLUMN_MAJOR, &global_transform[0][0]
                 );
-
                 rtcCommitGeometry(*geom);
             }
         }

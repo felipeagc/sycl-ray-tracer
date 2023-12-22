@@ -12,11 +12,13 @@ find_package(embree 4 REQUIRED)
 set(
     SYCL_SOURCES
     src/main.cpp
+    src/render.cpp
 )
 
 set(
     SOURCES
     ${SYCL_SOURCES}
+
     deps/stb_image.cpp
     deps/stb_image_write.cpp
     deps/tiny_gltf.cpp
