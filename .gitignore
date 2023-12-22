@@ -1,2 +1,5 @@
 build/
 .cache
+gpucache/
+*.glb
+out.png

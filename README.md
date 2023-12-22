@@ -44,11 +44,31 @@ sudo apt install intel-oneapi-runtime-libs
 ### generate
 Generate build files.
 ```
-cmake -Bbuild -GNinja -DCMAKE_BUILD_TYPE=RelWwithDebInfo -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx .
+rm -rf build
+cmake -Bbuild -GNinja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=icx \
+    -DCMAKE_CXX_COMPILER=icpx .
+```
+
+### generate-debug
+Generate build files.
+```
+rm -rf build
+cmake -Bbuild -GNinja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=icx \
+    -DCMAKE_CXX_COMPILER=icpx .
 ```
 
 ### build
 Build project.
 ```
 ninja -C build
+```
+
+### watch
+Build project.
+```
+watchexec -e cpp,hpp,h,glb,gltf,txt "ninja -C build && ./build/raytracer"
 ```

@@ -1,43 +1,69 @@
 #pragma once
 
 #include <stdexcept>
+#include <string>
 #include <sycl/sycl.hpp>
 #include <embree4/rtcore.h>
-#include <embree4/rtcore_geometry.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <fmt/core.h>
 
 #include "tiny_gltf.h"
 
+#include "util.hpp"
 #include "app.hpp"
+
+static_assert(sizeof(glm::vec3) == 3 * sizeof(float));
+static_assert(alignof(glm::vec3) == alignof(float));
+
+template <> struct ::fmt::formatter<glm::vec3> {
+    constexpr auto parse(format_parse_context &ctx) -> format_parse_context::iterator {
+        auto it = ctx.begin(), end = ctx.end();
+        if (it != end && *it != '}') throw_format_error("invalid format");
+        return it;
+    }
+    auto format(glm::vec3 t, fmt::format_context &ctx) {
+        return fmt::format_to(ctx.out(), "{} {} {}", t[0], t[1], t[2]);
+    }
+};
 
 namespace raytracer {
 
+struct Primitive {
+    glm::vec3 *positions;
+    size_t position_count;
+    uint32_t *indices;
+    uint32_t index_count;
+};
+
 struct Mesh {
-    RTCGeometry geom;
+    std::vector<Primitive> primitives;
+};
 
-    Mesh(RTCGeometry geom) : geom(geom) {}
+struct Node {
+    std::optional<uint32_t> parent = {};
+    std::vector<RTCGeometry> geometries = {};
 
-    Mesh(const Mesh &) = delete;
-    Mesh &operator=(const Mesh &) = delete;
+    Node() = default;
 
-    Mesh(Mesh &&other) {
-        this->geom = other.geom;
-        other.geom = nullptr;
-    }
+    Node(const Node &) = delete;
+    Node &operator=(const Node &) = delete;
 
-    Mesh &operator=(Mesh &&other) {
-        this->geom = other.geom;
-        other.geom = nullptr;
-        return *this;
-    }
+    Node(Node &&other) = default;
+    Node &operator=(Node &&other) = default;
 
-    ~Mesh() {
-        if (geom) {
-            rtcReleaseGeometry(geom);
+    ~Node() {
+        for (auto geom : this->geometries) {
+            if (geom) {
+                rtcReleaseGeometry(geom);
+            }
         }
     }
 };
 
 struct Model {
+    std::vector<Node> nodes;
     std::vector<Mesh> meshes;
 
     Model(const Model &) = delete;
@@ -47,13 +73,12 @@ struct Model {
     Model &operator=(Model &&) = default;
 
     Model(App &app, const std::string &filepath) {
-        tinygltf::Model model;
+        tinygltf::Model gltf_model;
         tinygltf::TinyGLTF loader;
         std::string err;
         std::string warn;
 
-        bool ret =
-            loader.LoadBinaryFromFile(&model, &err, &warn, filepath.c_str());
+        bool ret = loader.LoadBinaryFromFile(&gltf_model, &err, &warn, filepath.c_str());
 
         if (!warn.empty()) {
             printf("Warn: %s\n", warn.c_str());
@@ -63,136 +88,187 @@ struct Model {
             throw std::runtime_error("Failed to load .glTF : " + err);
         }
 
-        for (size_t i = 0; i < model.bufferViews.size(); i++) {
-            const tinygltf::BufferView &bufferView = model.bufferViews[i];
+        load_primitives(app, gltf_model);
+
+        const tinygltf::Scene &scene =
+            gltf_model.scenes[gltf_model.defaultScene > -1 ? gltf_model.defaultScene : 0];
+        this->nodes.resize(gltf_model.nodes.size());
+        for (size_t i = 0; i < scene.nodes.size(); i++) {
+            uint32_t node_index = scene.nodes[i];
+            this->load_node(app, gltf_model, scene.nodes[i], {});
+        }
+    }
+
+    void load_primitives(App &app, const tinygltf::Model &gltf_model) {
+        this->meshes.resize(gltf_model.meshes.size());
+
+        for (size_t i = 0; i < gltf_model.meshes.size(); i++) {
+            const tinygltf::Mesh &gltf_mesh = gltf_model.meshes[i];
+            Mesh &mesh = this->meshes[i];
+
+            mesh.primitives.resize(gltf_mesh.primitives.size());
+            for (size_t j = 0; j < gltf_mesh.primitives.size(); j++) {
+                const tinygltf::Primitive &gltf_primitive = gltf_mesh.primitives[j];
+                Primitive &primitive = mesh.primitives[j];
+
+                // We only work with indices
+                bool has_indices = gltf_primitive.indices > -1;
+                assert(has_indices);
+
+                // Position attribute is required
+                assert(
+                    gltf_primitive.attributes.find("POSITION") !=
+                    gltf_primitive.attributes.end()
+                );
+
+                const tinygltf::Accessor &pos_accessor =
+                    gltf_model
+                        .accessors[gltf_primitive.attributes.find("POSITION")->second];
+                const tinygltf::BufferView &pos_view =
+                    gltf_model.bufferViews[pos_accessor.bufferView];
+                const float *buffer_pos = reinterpret_cast<const float *>(
+                    &(gltf_model.buffers[pos_view.buffer]
+                          .data[pos_accessor.byteOffset + pos_view.byteOffset])
+                );
+
+                uint32_t vertex_count = static_cast<uint32_t>(pos_accessor.count);
+                uint32_t pos_byte_stride =
+                    pos_accessor.ByteStride(pos_view)
+                        ? (pos_accessor.ByteStride(pos_view) / sizeof(float))
+                        : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC3);
+
+                primitive.position_count = pos_accessor.count;
+                primitive.positions = alignedSYCLMallocDeviceReadOnly<glm::vec3>(
+                    app.queue, primitive.position_count, 16
+                );
+
+                for (size_t v = 0; v < pos_accessor.count; v++) {
+                    primitive.positions[v] =
+                        glm::make_vec3(&buffer_pos[v * pos_byte_stride]);
+                }
+
+                // Index buffer
+                const tinygltf::Accessor &indices_accessor =
+                    gltf_model.accessors
+                        [gltf_primitive.indices > -1 ? gltf_primitive.indices : 0];
+                const tinygltf::BufferView &indices_buffer_view =
+                    gltf_model.bufferViews[indices_accessor.bufferView];
+                const tinygltf::Buffer &indices_buffer =
+                    gltf_model.buffers[indices_buffer_view.buffer];
+                const void *indices_data_ptr =
+                    &(indices_buffer.data
+                          [indices_accessor.byteOffset + indices_buffer_view.byteOffset]);
+
+                assert(indices_accessor.count % 3 == 0);
+                primitive.index_count = indices_accessor.count;
+                primitive.indices = alignedSYCLMallocDeviceReadOnly<uint32_t>(
+                    app.queue, primitive.index_count, 16
+                );
+
+                switch (indices_accessor.componentType) {
+                case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT: {
+                    const uint32_t *buf = static_cast<const uint32_t *>(indices_data_ptr);
+                    for (size_t index = 0; index < indices_accessor.count; index++) {
+                        primitive.indices[index] = buf[index];
+                    }
+                    break;
+                }
+                case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
+                    const uint16_t *buf = static_cast<const uint16_t *>(indices_data_ptr);
+                    for (size_t index = 0; index < indices_accessor.count; index++) {
+                        primitive.indices[index] = buf[index];
+                    }
+                    break;
+                }
+                case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {
+                    const uint8_t *buf = static_cast<const uint8_t *>(indices_data_ptr);
+                    for (size_t index = 0; index < indices_accessor.count; index++) {
+                        primitive.indices[index] = buf[index];
+                    }
+                    break;
+                }
+                default:
+                    fmt::println(
+                        "Index component type {} not supported!",
+                        indices_accessor.componentType
+                    );
+                    assert(0);
+                }
+            }
+        }
+    }
+
+    void load_node(
+        App &app,
+        const tinygltf::Model &gltf_model,
+        uint32_t node_index,
+        std::optional<uint32_t> parent_index
+    ) {
+        const tinygltf::Node &gltf_node = gltf_model.nodes[node_index];
+        Node &node = this->nodes[node_index];
+
+        // Generate local node matrix
+        glm::vec3 translation = glm::vec3(0.0f);
+        glm::mat4 rotation = glm::mat4(1.0f);
+        glm::vec3 scale = glm::vec3(1.0f);
+        glm::mat4 matrix = glm::mat4(1.0f);
+
+        // Node with children
+        if (gltf_node.children.size() > 0) {
+            for (uint32_t child_index : gltf_node.children) {
+                load_node(app, gltf_model, child_index, node_index);
+            }
         }
 
-        for (auto &mesh : model.meshes) {
-            for (auto &primitive : mesh.primitives) {
-                if (primitive.mode != TINYGLTF_MODE_TRIANGLES) {
-                    throw std::runtime_error("Only triangles are supported.");
-                }
+        if (gltf_node.translation.size() == 3) {
+            translation = glm::make_vec3(gltf_node.translation.data());
+        }
+        if (gltf_node.rotation.size() == 4) {
+            glm::quat q = glm::make_quat(gltf_node.rotation.data());
+        }
+        if (gltf_node.scale.size() == 3) {
+            scale = glm::make_vec3(gltf_node.scale.data());
+        }
+        if (gltf_node.matrix.size() == 16) {
+            matrix = glm::make_mat4x4(gltf_node.matrix.data());
+        }
 
-                auto &index_accessor = model.accessors[primitive.indices];
-                auto &index_buffer_view =
-                    model.bufferViews[index_accessor.bufferView];
-                auto &index_buffer = model.buffers[index_buffer_view.buffer];
-                assert(index_accessor.type == TINYGLTF_TYPE_SCALAR);
+        // Node contains mesh data
+        if (gltf_node.mesh != -1) {
+            const tinygltf::Mesh gltf_mesh = gltf_model.meshes[gltf_node.mesh];
+            Mesh &mesh = this->meshes[gltf_node.mesh];
 
-                auto &pos_accessor =
-                    model.accessors[primitive.attributes["POSITION"]];
-                auto &pos_buffer_view =
-                    model.bufferViews[pos_accessor.bufferView];
-                auto &pos_buffer = model.buffers[pos_buffer_view.buffer];
-                assert(pos_accessor.componentType ==
-                       TINYGLTF_COMPONENT_TYPE_FLOAT);
-                assert(pos_accessor.type == TINYGLTF_TYPE_VEC3);
+            node.geometries.resize(mesh.primitives.size());
+            for (size_t i = 0; i < mesh.primitives.size(); ++i) {
+                Primitive &prim = mesh.primitives[i];
+                RTCGeometry *geom = &node.geometries[i];
+                *geom = rtcNewGeometry(app.embree_device, RTC_GEOMETRY_TYPE_TRIANGLE);
 
-                assert(index_accessor.count % 3 == 0);
-                assert(pos_accessor.count % 3 == 0);
+                rtcSetSharedGeometryBuffer(
+                    *geom,
+                    RTC_BUFFER_TYPE_VERTEX,
+                    0,
+                    RTC_FORMAT_FLOAT3,
+                    prim.positions,
+                    0,
+                    sizeof(glm::vec3),
+                    prim.position_count
+                );
 
-                RTCGeometry geom = rtcNewGeometry(app.embree_device,
-                                                  RTC_GEOMETRY_TYPE_TRIANGLE);
+                assert(prim.index_count % 3 == 0);
+                uint32_t triangle_count = prim.index_count / 3;
+                rtcSetSharedGeometryBuffer(
+                    *geom,
+                    RTC_BUFFER_TYPE_INDEX,
+                    0,
+                    RTC_FORMAT_UINT3,
+                    prim.indices,
+                    0,
+                    3 * sizeof(uint32_t),
+                    triangle_count
+                );
 
-                //
-                // Vertex buffer
-                //
-
-                float *source_pos_data = reinterpret_cast<float *>(
-                    &pos_buffer.data[pos_buffer_view.byteOffset +
-                                     pos_accessor.byteOffset]);
-
-                float *positions = (float *)rtcSetNewGeometryBuffer(
-                    geom, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3,
-                    3 * sizeof(float), pos_accessor.count);
-
-                std::cout << "Positions:\n";
-                for (size_t i = 0; i < pos_accessor.count; i++) {
-                    for (size_t j = 0; j < 3; j++) {
-                        positions[i*3+j] = source_pos_data[i*3+j];
-                        std::cout << positions[i*3+j] << " ";
-                        if (j % 3 == 2) {
-                            std::cout << "\n";
-                        }
-                    }
-                }
-
-                //
-                // Index buffer
-                //
-
-                uint32_t *indices = (uint32_t *)rtcSetNewGeometryBuffer(
-                    geom, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3,
-                    3 * sizeof(uint32_t), index_accessor.count / 3);
-
-                switch (index_accessor.componentType) {
-                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
-                        uint8_t *source_index_data =
-                            reinterpret_cast<uint8_t *>(
-                                &index_buffer
-                                     .data[index_buffer_view.byteOffset +
-                                           index_accessor.byteOffset]);
-
-                        for (size_t i = 0; i < index_accessor.count; i++) {
-                            indices[i] = source_index_data[i];
-                        }
-                        break;
-                    }
-                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
-                        uint16_t *source_index_data =
-                            reinterpret_cast<uint16_t *>(
-                                &index_buffer
-                                     .data[index_buffer_view.byteOffset +
-                                           index_accessor.byteOffset]);
-
-                        for (size_t i = 0; i < index_accessor.count; i++) {
-                            indices[i] = source_index_data[i];
-                        }
-                        break;
-                    }
-                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: {
-                        uint32_t *source_index_data =
-                            reinterpret_cast<uint32_t *>(
-                                &index_buffer
-                                     .data[index_buffer_view.byteOffset +
-                                           index_accessor.byteOffset]);
-
-                        for (size_t i = 0; i < index_accessor.count; i++) {
-                            indices[i] = source_index_data[i];
-                        }
-                        break;
-                    }
-                    default:
-                        throw std::runtime_error(
-                            "Unsupported index component type.");
-                }
-
-                std::cout << "Indices:\n";
-                for (size_t i = 0; i < index_accessor.count; i++) {
-                    std::cout << indices[i] << " ";
-                    if (i % 3 == 2) {
-                        std::cout << "\n";
-                    }
-                }
-
-                rtcCommitGeometry(geom);
-
-                this->meshes.emplace_back(geom);
-
-                // std::cout << "Index count: " << index_accessor.count
-                //           << std::endl;
-                // std::cout << "Index buffer: " << index_accessor.bufferView
-                //           << std::endl;
-                // std::cout << "Index byteOffset: " <<
-                // index_accessor.byteOffset
-                //           << std::endl;
-
-                // std::cout << "Pos count: " << pos_accessor.count <<
-                // std::endl; std::cout << "Pos buffer: " <<
-                // pos_accessor.bufferView
-                //           << std::endl;
-                // std::cout << "Pos byteOffset: " << pos_accessor.byteOffset
-                //           << std::endl;
+                rtcCommitGeometry(*geom);
             }
         }
     }
@@ -215,10 +291,13 @@ struct Scene {
     }
 
     Scene(App &app, const std::vector<Model> &models) {
+        flush(std::cout);
         this->scene = rtcNewScene(app.embree_device);
         for (auto &model : models) {
-            for (auto &mesh : model.meshes) {
-                rtcAttachGeometry(this->scene, mesh.geom);
+            for (auto &node : model.nodes) {
+                for (auto &geom : node.geometries) {
+                    rtcAttachGeometry(this->scene, geom);
+                }
             }
         }
 
@@ -232,4 +311,4 @@ struct Scene {
     }
 };
 
-}  // namespace raytracer
+} // namespace raytracer

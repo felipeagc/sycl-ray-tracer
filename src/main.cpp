@@ -7,7 +7,6 @@
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <embree4/rtcore.h>
-#include <glm/glm.hpp>
 
 using sycl::float2;
 using sycl::float3;
@@ -46,7 +45,8 @@ static float3 render_pixel(
 
 void render_frame(App &app, range<2> img_size, sycl::image<2> &image) {
     std::vector<Model> models;
-    models.emplace_back(app, "../assets/cube.glb");
+    models.emplace_back(app, "./assets/Lantern.glb");
+
     Scene scene(app, models);
 
     uint32_t initial_ray_count = 0;

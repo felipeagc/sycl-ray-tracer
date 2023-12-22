@@ -32,4 +32,47 @@ static void write_image(sycl::queue& q, sycl::image<2>& image, size_t width,
     sycl::free(transfer_buf, q);
 }
 
+/*
+ * This function allocated USM memory that is writeable by the device.
+ */
+
+template<typename T>
+T* alignedSYCLMallocDeviceReadWrite(const sycl::queue& queue, size_t count, size_t align)
+{
+  if (count == 0)
+    return nullptr;
+
+  assert((align & (align - 1)) == 0);
+  T *ptr = (T*)sycl::aligned_alloc(align, count * sizeof(T), queue, sycl::usm::alloc::shared);
+  if (count != 0 && ptr == nullptr)
+    throw std::bad_alloc();
+
+  return ptr;
+}
+
+/*
+ * This function allocated USM memory that is only readable by the
+ * device. Using this mode many small allocations are possible by the
+ * application.
+ */
+
+template<typename T>
+T* alignedSYCLMallocDeviceReadOnly(const sycl::queue& queue, size_t count, size_t align)
+{
+  if (count == 0)
+    return nullptr;
+
+  assert((align & (align - 1)) == 0);
+  T *ptr = (T*)sycl::aligned_alloc_shared(align, count * sizeof(T), queue, sycl::ext::oneapi::property::usm::device_read_only());
+  if (count != 0 && ptr == nullptr)
+    throw std::bad_alloc();
+
+  return ptr;
+}
+
+inline void alignedSYCLFree(const sycl::queue& queue, void* ptr)
+{
+  if (ptr) sycl::free(ptr, queue);
+}
+
 }  // namespace raytracer

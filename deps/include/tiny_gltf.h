@@ -38,7 +38,6 @@
 #define TINY_GLTF_H_
 
 #define TINYGLTF_NO_STB_IMAGE_WRITE
-#define TINYGLTF_NO_STB_IMAGE
 
 #include <array>
 #include <cassert>
