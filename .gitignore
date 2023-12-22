@@ -3,3 +3,5 @@ build/
 gpucache/
 *.glb
 out.png
+*.blend
+*.blend1

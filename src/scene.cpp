@@ -96,10 +96,10 @@ Scene::Scene(App &app, const std::string &filepath, glm::vec3 global_scale)
 
     const tinygltf::Scene &scene =
         gltf_model.scenes[gltf_model.defaultScene > -1 ? gltf_model.defaultScene : 0];
+
     this->nodes.resize(gltf_model.nodes.size());
-    for (size_t i = 0; i < scene.nodes.size(); i++) {
-        uint32_t node_index = scene.nodes[i];
-        this->load_node(app, gltf_model, scene.nodes[i], {});
+    for (uint32_t node_index : scene.nodes) {
+        this->load_node(app, gltf_model, node_index, {});
     }
 
     this->scene = rtcNewScene(app.embree_device);
@@ -109,6 +109,27 @@ Scene::Scene(App &app, const std::string &filepath, glm::vec3 global_scale)
         }
     }
     rtcCommitScene(this->scene);
+
+    if (this->camera_node_index) {
+        auto &gltf_camera_node = gltf_model.nodes[this->camera_node_index];
+        Node &camera_node = this->nodes[this->camera_node_index];
+        glm::mat4 camera_transform = this->node_global_matrix(camera_node);
+
+        this->camera_position = glm::vec3(camera_transform[3]);
+
+        glm::quat camera_rotation = glm::quat_cast(camera_transform);
+
+        glm::vec3 euler = glm::degrees(glm::eulerAngles(camera_rotation));
+
+        glm::vec3 forward_vector = glm::vec3(0.0f, 0.0f, -1.0f);
+        this->camera_direction = glm::normalize(camera_rotation * forward_vector);
+
+        float yfov = gltf_model.cameras[gltf_camera_node.camera].perspective.yfov;
+        float aspect_ratio =
+            gltf_model.cameras[gltf_camera_node.camera].perspective.aspectRatio;
+
+        this->camera_focal_length = 1.0f / glm::tan(yfov / 2.0f);
+    }
 }
 
 Scene::~Scene() {
@@ -272,6 +293,10 @@ void Scene::load_node(
     const tinygltf::Node &gltf_node = gltf_model.nodes[node_index];
     Node &node = this->nodes[node_index];
     node.parent = parent_index;
+
+    if (gltf_node.camera != -1) {
+        this->camera_node_index = node_index;
+    }
 
     if (gltf_node.translation.size() == 3) {
         node.translation = glm::make_vec3(gltf_node.translation.data());

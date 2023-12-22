@@ -70,5 +70,5 @@ ninja -C build
 ### watch
 Build project.
 ```
-watchexec -e cpp,hpp,h,glb,gltf,txt "ninja -C build && ./build/raytracer"
+watchexec --no-vcs-ignore -e cpp,hpp,h,glb,gltf,txt "ninja -C build && ./build/raytracer"
 ```

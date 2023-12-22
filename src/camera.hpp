@@ -2,6 +2,9 @@
 
 #include <sycl/sycl.hpp>
 #include <embree4/rtcore.h>
+#include <glm/glm.hpp>
+#include <fmt/core.h>
+
 #include "xorshift.hpp"
 
 namespace raytracer {
@@ -16,15 +19,19 @@ struct Camera {
     static constexpr int max_samples = 100;
     static constexpr int max_bounces = 100;
 
-    Camera(sycl::range<2> img_size, sycl::float3 center, sycl::float3 look_at)
-        : center(center) {
+    Camera(sycl::range<2> img_size, glm::vec3 cam_center, glm::vec3 cam_dir, float focal_length) {
         using sycl::float2;
         using sycl::float3;
 
-        // Setup camera
-        float focal_length = 1.0f;
+        this->center[0] = cam_center.x;
+        this->center[1] = cam_center.y;
+        this->center[2] = cam_center.z;
 
-        float3 dir = normalize(look_at - center);
+        float3 dir = normalize(float3(cam_dir.x, cam_dir.y, cam_dir.z));
+
+        fmt::println("Direction {} {} {}", dir[0], dir[1], dir[2]);
+
+        // Setup camera
         float3 world_up = float3(0, 1, 0);
         float3 right = normalize(cross(dir, world_up));
         float3 up = normalize(cross(right, dir));

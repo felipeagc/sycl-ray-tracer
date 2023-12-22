@@ -50,6 +50,11 @@ struct Scene {
     std::vector<Mesh> meshes;
     glm::vec3 global_scale;
     RTCScene scene;
+    int camera_node_index = -1;
+
+    glm::vec3 camera_position;
+    glm::vec3 camera_direction;
+    float camera_focal_length;
 
     Scene(const Scene &) = delete;
     Scene &operator=(const Scene &) = delete;
