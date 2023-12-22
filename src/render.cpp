@@ -42,13 +42,10 @@ static float3 render_pixel(
 void render_frame(
     App &app,
     const Camera &camera,
-    const std::vector<Model> &models,
+    const Scene &scene,
     range<2> img_size,
     sycl::image<2> &image
 ) {
-
-    Scene scene(app, models);
-
     uint32_t initial_ray_count = 0;
     sycl::buffer<uint32_t> ray_count_buffer{&initial_ray_count, 1};
 

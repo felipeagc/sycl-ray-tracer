@@ -92,18 +92,36 @@ struct Node {
     }
 };
 
-struct Model {
+struct Scene {
     std::vector<Node> nodes;
     std::vector<Mesh> meshes;
     glm::vec3 global_scale;
+    RTCScene scene;
 
-    Model(const Model &) = delete;
-    Model &operator=(const Model &) = delete;
+    Scene(const Scene &) = delete;
+    Scene &operator=(const Scene &) = delete;
 
-    Model(Model &&) = default;
-    Model &operator=(Model &&) = default;
+    Scene(Scene &&other) {
+        this->scene = other.scene;
+        other.scene = nullptr;
 
-    Model(
+        this->global_scale = other.global_scale;
+
+        this->nodes = std::move(other.nodes);
+        this->meshes = std::move(other.meshes);
+    }
+    Scene &operator=(Scene &&other) {
+        this->scene = other.scene;
+        other.scene = nullptr;
+
+        this->global_scale = other.global_scale;
+
+        this->nodes = std::move(other.nodes);
+        this->meshes = std::move(other.meshes);
+        return *this;
+    }
+
+    Scene(
         App &app, const std::string &filepath, glm::vec3 global_scale = {1.0f, 1.0f, 1.0f}
     )
         : global_scale(global_scale) {
@@ -131,10 +149,25 @@ struct Model {
             uint32_t node_index = scene.nodes[i];
             this->load_node(app, gltf_model, scene.nodes[i], {});
         }
+
+        this->scene = rtcNewScene(app.embree_device);
+        for (auto &node : this->nodes) {
+            for (auto &geom : node.geometries) {
+                rtcAttachGeometry(this->scene, geom);
+            }
+        }
+        rtcCommitScene(this->scene);
+    }
+
+    ~Scene() {
+        if (this->scene) {
+            rtcReleaseScene(this->scene);
+        }
     }
 
     glm::mat4 node_global_matrix(const Node &node) const {
-        glm::mat4 m = node.local_matrix() * glm::scale(glm::mat4(1.0f), this->global_scale);
+        glm::mat4 m =
+            node.local_matrix() * glm::scale(glm::mat4(1.0f), this->global_scale);
         std::optional<uint32_t> p = node.parent;
         while (p) {
             const Node &parent = nodes[p.value()];
@@ -329,43 +362,6 @@ struct Model {
                 );
                 rtcCommitGeometry(*geom);
             }
-        }
-    }
-};
-
-struct Scene {
-    RTCScene scene;
-
-    Scene(const Scene &) = delete;
-    Scene &operator=(const Scene &) = delete;
-
-    Scene(Scene &&other) {
-        this->scene = other.scene;
-        other.scene = nullptr;
-    }
-    Scene &operator=(Scene &&other) {
-        this->scene = other.scene;
-        other.scene = nullptr;
-        return *this;
-    }
-
-    Scene(App &app, const std::vector<Model> &models) {
-        flush(std::cout);
-        this->scene = rtcNewScene(app.embree_device);
-        for (auto &model : models) {
-            for (auto &node : model.nodes) {
-                for (auto &geom : node.geometries) {
-                    rtcAttachGeometry(this->scene, geom);
-                }
-            }
-        }
-
-        rtcCommitScene(this->scene);
-    }
-
-    ~Scene() {
-        if (this->scene) {
-            rtcReleaseScene(this->scene);
         }
     }
 };

@@ -17,13 +17,13 @@ int main(int argc, char *argv[]) {
             img_size
         );
 
-        std::vector<raytracer::Model> models;
-        models.emplace_back(app, "./assets/Lantern.glb");
+        raytracer::Scene model(app, "./assets/Lantern.glb");
 
+        raytracer::Camera camera(
+            img_size, sycl::float3(15, 10, 15), sycl::float3(0, 10, 0)
+        );
 
-        raytracer::Camera camera(img_size, sycl::float3(15, 10, 15), sycl::float3(0, 10, 0));
-
-        raytracer::render_frame(app, camera, models, img_size, image);
+        raytracer::render_frame(app, camera, model, img_size, image);
     } catch (sycl::exception const &e) {
         fmt::println("Caught SYCL exception: {}", e.what());
         std::terminate();
