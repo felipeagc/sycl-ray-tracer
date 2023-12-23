@@ -53,12 +53,15 @@ struct MaterialDielectric {
 
     inline bool scatter(
         sycl::float3 &dir,
-        sycl::float3 normal,
+        sycl::float3 outward_normal,
         XorShift32State &rng,
         sycl::float4 &attenuation
     ) const {
         attenuation = sycl::float4(1, 1, 1, 1);
-        float refraction_ratio = 1.0f / this->ior;
+        bool front_face = dot(dir, outward_normal) < 0;
+
+        sycl::float3 normal = front_face ? outward_normal : -outward_normal;
+        float refraction_ratio = front_face ? (1.0f / this->ior) : this->ior;
 
         sycl::float3 unit_direction = normalize(dir);
         sycl::float3 refracted = refract(unit_direction, normal, refraction_ratio);

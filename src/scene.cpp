@@ -166,7 +166,7 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             const tinygltf::Material &gltf_material =
                 gltf_model.materials[gltf_primitive.material];
 
-#if 0
+#if 1
             fmt::println("Material[{}]: {}", gltf_primitive.material, gltf_material.name);
             for (auto &ext : gltf_material.extensions) {
                 fmt::println("Extension: {}", ext.first);
@@ -190,6 +190,8 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 ior_ext != gltf_material.extensions.end()) {
                 float ior = (float)ior_ext->second.Get("ior").GetNumberAsDouble();
                 material = Material(MaterialDielectric{.ior = ior});
+
+                fmt::println("IOR: {}", ior);
             } else if (pbr.metallicFactor > 0.01f) {
                 material = Material(MaterialMetallic{
                     .albedo = base_color,
