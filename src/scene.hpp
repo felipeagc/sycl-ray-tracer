@@ -21,7 +21,8 @@ struct GeometryData {
 
 struct Primitive {
     glm::vec3 *positions;
-    size_t position_count;
+    glm::vec3 *normals;
+    size_t vertex_count;
     uint32_t *indices;
     uint32_t index_count;
 

@@ -216,6 +216,8 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 gltf_primitive.attributes.end()
             );
 
+            // Position buffer
+
             const tinygltf::Accessor &pos_accessor =
                 gltf_model.accessors[gltf_primitive.attributes.find("POSITION")->second];
             const tinygltf::BufferView &pos_view =
@@ -226,18 +228,44 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             );
 
             uint32_t vertex_count = static_cast<uint32_t>(pos_accessor.count);
+
             uint32_t pos_byte_stride =
                 pos_accessor.ByteStride(pos_view)
                     ? (pos_accessor.ByteStride(pos_view) / sizeof(float))
                     : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC3);
 
-            primitive.position_count = pos_accessor.count;
+            primitive.vertex_count = pos_accessor.count;
             primitive.positions = alignedSYCLMallocDeviceReadOnly<glm::vec3>(
-                app.queue, primitive.position_count, 16
+                app.queue, primitive.vertex_count, 16
             );
 
             for (size_t v = 0; v < pos_accessor.count; v++) {
                 primitive.positions[v] = glm::make_vec3(&buffer_pos[v * pos_byte_stride]);
+            }
+
+            // Normal buffer
+
+            const tinygltf::Accessor &normal_accessor =
+                gltf_model.accessors[gltf_primitive.attributes.find("NORMAL")->second];
+            const tinygltf::BufferView &normal_view =
+                gltf_model.bufferViews[normal_accessor.bufferView];
+            const float *buffer_normal = reinterpret_cast<const float *>(
+                &(gltf_model.buffers[normal_view.buffer]
+                      .data[normal_accessor.byteOffset + normal_view.byteOffset])
+            );
+
+            uint32_t normal_byte_stride =
+                normal_accessor.ByteStride(normal_view)
+                    ? (normal_accessor.ByteStride(normal_view) / sizeof(float))
+                    : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC3);
+
+            primitive.normals = alignedSYCLMallocDeviceReadOnly<glm::vec3>(
+                app.queue, primitive.vertex_count, 16
+            );
+
+            for (size_t v = 0; v < primitive.vertex_count; v++) {
+                primitive.normals[v] =
+                    glm::make_vec3(&buffer_normal[v * normal_byte_stride]);
             }
 
             // Index buffer
@@ -302,7 +330,18 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 primitive.positions,
                 0,
                 sizeof(glm::vec3),
-                primitive.position_count
+                primitive.vertex_count
+            );
+
+            rtcSetSharedGeometryBuffer(
+                geom,
+                RTC_BUFFER_TYPE_NORMAL,
+                0,
+                RTC_FORMAT_FLOAT3,
+                primitive.normals,
+                0,
+                sizeof(glm::vec3),
+                primitive.vertex_count
             );
 
             assert(prim.index_count % 3 == 0);
