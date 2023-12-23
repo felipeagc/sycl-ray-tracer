@@ -46,8 +46,8 @@ static float4 render_pixel(
         rayhit.ray.org_y = rayhit.ray.org_y + rayhit.ray.dir_y * rayhit.ray.tfar;
         rayhit.ray.org_z = rayhit.ray.org_z + rayhit.ray.dir_z * rayhit.ray.tfar;
 
-        float3 normal = float3(rayhit.hit.Ng_x, rayhit.hit.Ng_y, rayhit.hit.Ng_z);
-        float3 new_dir = rng.random_on_hemisphere(normal);
+        float3 normal = normalize(float3(rayhit.hit.Ng_x, rayhit.hit.Ng_y, rayhit.hit.Ng_z));
+        float3 new_dir = normalize(normal + rng.random_unit_vector());
 
         rayhit.ray.dir_x = new_dir.x();
         rayhit.ray.dir_y = new_dir.y();
