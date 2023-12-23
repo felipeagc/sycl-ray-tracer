@@ -42,24 +42,22 @@ static float4 render_pixel(
             return color;
         }
 
-        rayhit.ray.org_x = rayhit.ray.org_x + rayhit.ray.dir_x * rayhit.ray.tfar;
-        rayhit.ray.org_y = rayhit.ray.org_y + rayhit.ray.dir_y * rayhit.ray.tfar;
-        rayhit.ray.org_z = rayhit.ray.org_z + rayhit.ray.dir_z * rayhit.ray.tfar;
-
-        float3 normal = normalize(float3(rayhit.hit.Ng_x, rayhit.hit.Ng_y, rayhit.hit.Ng_z));
-        float3 new_dir = normalize(normal + rng.random_unit_vector());
-
-        rayhit.ray.dir_x = new_dir.x();
-        rayhit.ray.dir_y = new_dir.y();
-        rayhit.ray.dir_z = new_dir.z();
-
-        rayhit.ray.tfar = std::numeric_limits<float>::infinity();
-        rayhit.ray.tnear = 0.0001f;
-
         GeometryData *user_data =
             (GeometryData *)rtcGetGeometryUserDataFromScene(scene, rayhit.hit.instID[0]);
 
-        color *= user_data->base_color;
+        RTCRay scattered_ray = {};
+        scattered_ray.time = 0;
+        scattered_ray.mask = UINT32_MAX;
+        scattered_ray.id = 0;
+        scattered_ray.flags = 0;
+
+        float4 attenuation = {};
+        if (user_data->material.scatter(rayhit, attenuation, scattered_ray, rng)) {
+            rayhit.ray = scattered_ray;
+            color *= attenuation;
+        } else {
+            return float4(0, 0, 0, 1);
+        }
     }
 
     return float4(0, 0, 0, 1);
@@ -116,16 +114,14 @@ void render_frame(
                 uint32_t ray_count = 0;
                 float4 pixel_color = float4(0, 0, 0, 0);
                 for (uint32_t i = 0; i < sample_count; ++i) {
-                    pixel_color += render_pixel(camera, rng, r_scene, x, y, ray_count, os);
+                    pixel_color +=
+                        render_pixel(camera, rng, r_scene, x, y, ray_count, os);
                 }
                 pixel_color /= (float)sample_count;
 
-                image_writer.write(
-                    int2(x, y),
-                    float4(
-                        pixel_color.x(), pixel_color.y(), pixel_color.z(), pixel_color.w()
-                    )
-                );
+                pixel_color = linear_to_gamma(pixel_color);
+
+                image_writer.write(int2(x, y), pixel_color);
 
                 ray_count_ref.fetch_add(ray_count);
             }

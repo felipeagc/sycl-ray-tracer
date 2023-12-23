@@ -176,9 +176,8 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             );
 
             primitive.user_data = GeometryData{
-                .base_color = base_color,
                 .emissive = emissive,
-                .material = Material(MaterialDiffuse()),
+                .material = Material(MaterialDiffuse{ .albedo = base_color }),
             };
 
             // We only work with indices

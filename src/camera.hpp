@@ -19,7 +19,12 @@ struct Camera {
     static constexpr int max_samples = 100;
     static constexpr int max_bounces = 100;
 
-    Camera(sycl::range<2> img_size, glm::vec3 cam_center, glm::vec3 cam_dir, float focal_length) {
+    Camera(
+        sycl::range<2> img_size,
+        glm::vec3 cam_center,
+        glm::vec3 cam_dir,
+        float focal_length
+    ) {
         using sycl::float2;
         using sycl::float3;
 

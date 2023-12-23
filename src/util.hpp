@@ -83,4 +83,31 @@ inline sycl::float3 unit_vector(sycl::float3 v) {
     return v / sycl::length(v);
 }
 
+inline float linear_to_gamma(float linear_component) {
+    return sycl::sqrt(linear_component);
+}
+
+inline sycl::float3 linear_to_gamma(sycl::float3 linear_component) {
+    return sycl::float3(
+        linear_to_gamma(linear_component[0]),
+        linear_to_gamma(linear_component[1]),
+        linear_to_gamma(linear_component[2])
+    );
+}
+
+inline sycl::float4 linear_to_gamma(sycl::float4 linear_component) {
+    return sycl::float4(
+        linear_to_gamma(linear_component[0]),
+        linear_to_gamma(linear_component[1]),
+        linear_to_gamma(linear_component[2]),
+        linear_component[3]
+    );
+}
+
+inline bool near_zero(sycl::float3 e) {
+    // Return true if the vector is close to zero in all dimensions.
+    float s = 1e-8f;
+    return (sycl::fabs(e[0]) < s) && (sycl::fabs(e[1]) < s) && (sycl::fabs(e[2]) < s);
+}
+
 } // namespace raytracer
