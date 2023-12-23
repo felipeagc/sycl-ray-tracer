@@ -7,6 +7,11 @@
 
 namespace raytracer {
 
+struct ScatterResult {
+    sycl::float3 dir;
+    sycl::float4 attenuation;
+};
+
 enum class MaterialType : uint8_t {
     eDiffuse,
     eMetallic,
@@ -16,18 +21,16 @@ enum class MaterialType : uint8_t {
 struct MaterialDiffuse {
     sycl::float4 albedo;
 
-    inline bool scatter(
-        sycl::float3 &dir,
-        sycl::float3 normal,
-        XorShift32State &rng,
-        sycl::float4 &attenuation
+    inline std::optional<ScatterResult> scatter(
+        XorShift32State &rng, const sycl::float3 &dir, const sycl::float3 &normal
     ) const {
-        dir = normal + rng.random_unit_vector();
+        ScatterResult result;
+        result.dir = normal + rng.random_unit_vector();
         if (near_zero(dir)) {
-            dir = normal;
+            result.dir = normal;
         }
-        attenuation = this->albedo;
-        return true;
+        result.attenuation = this->albedo;
+        return result;
     }
 };
 
@@ -35,29 +38,31 @@ struct MaterialMetallic {
     sycl::float4 albedo;
     float roughness;
 
-    inline bool scatter(
-        sycl::float3 &dir,
-        sycl::float3 normal,
-        XorShift32State &rng,
-        sycl::float4 &attenuation
+    inline std::optional<ScatterResult> scatter(
+        XorShift32State &rng, const sycl::float3 &dir, const sycl::float3 &normal
     ) const {
+        ScatterResult result;
+
         sycl::float3 reflected = reflect(dir, normal);
-        dir = reflected + this->roughness * rng.random_unit_vector();
-        attenuation = this->albedo;
-        return (dot(dir, normal) > 0);
+        result.dir = reflected + this->roughness * rng.random_unit_vector();
+        if (dot(result.dir, normal) <= 0) {
+            return {};
+        }
+
+        result.attenuation = this->albedo;
+        return result;
     }
 };
 
 struct MaterialDielectric {
     float ior;
 
-    inline bool scatter(
-        sycl::float3 &dir,
-        sycl::float3 outward_normal,
-        XorShift32State &rng,
-        sycl::float4 &attenuation
+    inline std::optional<ScatterResult> scatter(
+        XorShift32State &rng, const sycl::float3 &dir, const sycl::float3 &outward_normal
     ) const {
-        attenuation = sycl::float4(1, 1, 1, 1);
+        ScatterResult result;
+
+        result.attenuation = sycl::float4(1, 1, 1, 1);
 
         bool front_face = dot(dir, outward_normal) < 0;
 
@@ -72,12 +77,12 @@ struct MaterialDielectric {
 
         if (cannot_refract ||
             reflectance(cos_theta, refraction_ratio) > rng(0.0f, 1.0f)) {
-            dir = reflect(unit_direction, normal);
+            result.dir = reflect(unit_direction, normal);
         } else {
-            dir = refract(unit_direction, normal, refraction_ratio);
+            result.dir = refract(unit_direction, normal, refraction_ratio);
         }
 
-        return true;
+        return result;
     }
 
     static float reflectance(float cosine, float ref_idx) {
@@ -134,43 +139,14 @@ struct Material {
         this->dielectric = dielectric;
     }
 
-    bool scatter(
-        const RTCRayHit &rayhit,
-        sycl::float4 &attenuation,
-        RTCRay &scattered,
-        XorShift32State &rng
+    inline std::optional<ScatterResult> scatter(
+        XorShift32State &rng, const sycl::float3 &dir, const sycl::float3 &normal
     ) const {
-        scattered.org_x = rayhit.ray.org_x + rayhit.ray.dir_x * rayhit.ray.tfar;
-        scattered.org_y = rayhit.ray.org_y + rayhit.ray.dir_y * rayhit.ray.tfar;
-        scattered.org_z = rayhit.ray.org_z + rayhit.ray.dir_z * rayhit.ray.tfar;
-
-        scattered.tnear = 0.0001f;
-        scattered.tfar = std::numeric_limits<float>::infinity();
-
-        sycl::float3 dir =
-            normalize(sycl::float3(rayhit.ray.dir_x, rayhit.ray.dir_y, rayhit.ray.dir_z));
-
-        sycl::float3 normal =
-            normalize(sycl::float3(rayhit.hit.Ng_x, rayhit.hit.Ng_y, rayhit.hit.Ng_z));
-
-        bool res = false;
         switch (this->type) {
-        case MaterialType::eDiffuse:
-            res = this->diffuse.scatter(dir, normal, rng, attenuation);
-            break;
-        case MaterialType::eMetallic:
-            res = this->metallic.scatter(dir, normal, rng, attenuation);
-            break;
-        case MaterialType::eDielectric:
-            res = this->dielectric.scatter(dir, normal, rng, attenuation);
-            break;
+        case MaterialType::eDiffuse: return this->diffuse.scatter(rng, dir, normal);
+        case MaterialType::eMetallic: return this->metallic.scatter(rng, dir, normal);
+        case MaterialType::eDielectric: return this->dielectric.scatter(rng, dir, normal);
         }
-
-        scattered.dir_x = dir.x();
-        scattered.dir_y = dir.y();
-        scattered.dir_z = dir.z();
-
-        return res;
     }
 };
 
