@@ -54,7 +54,7 @@ static float4 render_pixel(
         rayhit.ray.dir_z = new_dir.z();
 
         rayhit.ray.tfar = std::numeric_limits<float>::infinity();
-        rayhit.ray.tnear = 0.0f;
+        rayhit.ray.tnear = 0.001f;
 
         GeometryData *user_data =
             (GeometryData *)rtcGetGeometryUserDataFromScene(scene, rayhit.hit.instID[0]);
@@ -111,7 +111,7 @@ void render_frame(
                     std::hash<std::size_t>{}(id.get_global_linear_id());
                 auto rng = XorShift32State{(uint32_t)init_generator_state};
 
-                constexpr uint32_t sample_count = 64;
+                constexpr uint32_t sample_count = 256;
 
                 uint32_t ray_count = 0;
                 float4 pixel_color = float4(0, 0, 0, 0);

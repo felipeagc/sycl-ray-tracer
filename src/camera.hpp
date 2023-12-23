@@ -58,7 +58,7 @@ struct Camera {
             .org_x = ray_origin[0],
             .org_y = ray_origin[1],
             .org_z = ray_origin[2],
-            .tnear = 0,
+            .tnear = 0.001f,
 
             .dir_x = ray_direction[0],
             .dir_y = ray_direction[1],
