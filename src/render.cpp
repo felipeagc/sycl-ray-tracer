@@ -54,7 +54,7 @@ static float4 render_pixel(
         rayhit.ray.dir_z = new_dir.z();
 
         rayhit.ray.tfar = std::numeric_limits<float>::infinity();
-        rayhit.ray.tnear = 0.001f;
+        rayhit.ray.tnear = 0.0001f;
 
         GeometryData *user_data =
             (GeometryData *)rtcGetGeometryUserDataFromScene(scene, rayhit.hit.instID[0]);
