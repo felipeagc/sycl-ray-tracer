@@ -14,7 +14,7 @@ using sycl::int2;
 using sycl::range;
 
 namespace raytracer {
-static float3 render_pixel(
+static float4 render_pixel(
     const Camera &camera,
     XorShift32State &rng,
     RTCScene scene,
@@ -36,9 +36,16 @@ static float3 render_pixel(
     (*out_ray_count)++;
 
     if (rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID) {
-        return float3(1, 0, 0);
+        GeometryData *user_data =
+            (GeometryData *)rtcGetGeometryUserDataFromScene(scene, rayhit.hit.instID[0]);
+
+        if (user_data) {
+            return user_data->base_color;
+        } else {
+            return float4(1, 0, 0, 1);
+        }
     }
-    return float3(0, 0, 0);
+    return float4(0, 0, 0, 1);
 }
 
 void render_frame(
@@ -88,12 +95,14 @@ void render_frame(
                 auto rng = XorShift32State{(uint32_t)init_generator_state};
 
                 uint32_t ray_count = 0;
-                float3 pixel_color =
+                float4 pixel_color =
                     render_pixel(camera, rng, r_scene, x, y, &ray_count, os);
 
                 image_writer.write(
                     int2(x, y),
-                    float4(pixel_color.x(), pixel_color.y(), pixel_color.z(), 1.0)
+                    float4(
+                        pixel_color.x(), pixel_color.y(), pixel_color.z(), pixel_color.w()
+                    )
                 );
 
                 ray_count_ref.fetch_add(ray_count);

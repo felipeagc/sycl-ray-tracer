@@ -29,8 +29,6 @@ struct Camera {
 
         float3 dir = normalize(float3(cam_dir.x, cam_dir.y, cam_dir.z));
 
-        fmt::println("Direction {} {} {}", dir[0], dir[1], dir[2]);
-
         // Setup camera
         float3 world_up = float3(0, 1, 0);
         float3 right = normalize(cross(dir, world_up));

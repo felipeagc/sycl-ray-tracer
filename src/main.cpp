@@ -19,7 +19,7 @@ int main(int argc, char *argv[]) {
             img_size
         );
 
-        raytracer::Scene scene(app, "./assets/scene.glb");
+        raytracer::Scene scene(app, "./assets/cornell.glb");
 
         raytracer::Camera camera(
             img_size,

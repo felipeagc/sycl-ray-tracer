@@ -11,6 +11,11 @@
 
 namespace raytracer {
 
+struct GeometryData {
+    sycl::float4 base_color;
+    sycl::float4 emissive;
+};
+
 struct Primitive {
     glm::vec3 *positions;
     size_t position_count;
@@ -18,6 +23,7 @@ struct Primitive {
     uint32_t index_count;
 
     RTCScene scene;
+    GeometryData user_data;
 };
 
 struct Mesh {

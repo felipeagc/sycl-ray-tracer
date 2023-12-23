@@ -1,5 +1,6 @@
 #include "scene.hpp"
 
+#include <embree4/rtcore_geometry.h>
 #include <stdexcept>
 #include <string>
 #include <sycl/sycl.hpp>
@@ -64,6 +65,7 @@ Scene::Scene(Scene &&other) {
     this->nodes = std::move(other.nodes);
     this->meshes = std::move(other.meshes);
 }
+
 Scene &Scene::operator=(Scene &&other) {
     this->scene = other.scene;
     other.scene = nullptr;
@@ -160,6 +162,23 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
         for (size_t j = 0; j < gltf_mesh.primitives.size(); j++) {
             const tinygltf::Primitive &gltf_primitive = gltf_mesh.primitives[j];
             Primitive &primitive = mesh.primitives[j];
+
+            auto &base_color_vec = gltf_model.materials[gltf_primitive.material]
+                                       .pbrMetallicRoughness.baseColorFactor;
+            sycl::float4 base_color = sycl::float4(
+                base_color_vec[0], base_color_vec[1], base_color_vec[2], base_color_vec[3]
+            );
+
+            auto &emissive_vec =
+                gltf_model.materials[gltf_primitive.material].emissiveFactor;
+            sycl::float4 emissive = sycl::float4(
+                emissive_vec[0], emissive_vec[1], emissive_vec[2], emissive_vec[3]
+            );
+
+            primitive.user_data = GeometryData{
+                .base_color = base_color,
+                .emissive = emissive,
+            };
 
             // We only work with indices
             bool has_indices = gltf_primitive.indices > -1;
@@ -334,6 +353,12 @@ void Scene::load_node(
             rtcSetGeometryTransform(
                 *geom, 0, RTC_FORMAT_FLOAT4X4_COLUMN_MAJOR, &global_transform[0][0]
             );
+
+            GeometryData *user_data =
+                alignedSYCLMallocDeviceReadOnly<GeometryData>(app.queue, 1, 16);
+            *user_data = prim.user_data;
+            rtcSetGeometryUserData(*geom, user_data);
+
             rtcCommitGeometry(*geom);
         }
     }
