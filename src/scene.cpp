@@ -163,27 +163,40 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             const tinygltf::Primitive &gltf_primitive = gltf_mesh.primitives[j];
             Primitive &primitive = mesh.primitives[j];
 
-            auto &pbr =
-                gltf_model.materials[gltf_primitive.material].pbrMetallicRoughness;
-            auto &base_color_vec = pbr.baseColorFactor;
+            const tinygltf::Material &gltf_material =
+                gltf_model.materials[gltf_primitive.material];
+
+#if 0
+            fmt::println("Material[{}]: {}", gltf_primitive.material, gltf_material.name);
+            for (auto &ext : gltf_material.extensions) {
+                fmt::println("Extension: {}", ext.first);
+            }
+#endif
+
+            const auto &pbr = gltf_material.pbrMetallicRoughness;
+            const auto &base_color_vec = pbr.baseColorFactor;
             sycl::float4 base_color = sycl::float4(
                 base_color_vec[0], base_color_vec[1], base_color_vec[2], base_color_vec[3]
             );
 
-            auto &emissive_vec =
+            const auto &emissive_vec =
                 gltf_model.materials[gltf_primitive.material].emissiveFactor;
             sycl::float4 emissive = sycl::float4(
                 emissive_vec[0], emissive_vec[1], emissive_vec[2], emissive_vec[3]
             );
 
             Material material;
-            if (pbr.metallicFactor < 0.01f) {
-                material = Material(MaterialDiffuse{.albedo = base_color});
-            } else {
+            if (auto ior_ext = gltf_material.extensions.find("KHR_materials_ior");
+                ior_ext != gltf_material.extensions.end()) {
+                float ior = (float)ior_ext->second.Get("ior").GetNumberAsDouble();
+                material = Material(MaterialDielectric{.ior = ior});
+            } else if (pbr.metallicFactor > 0.01f) {
                 material = Material(MaterialMetallic{
                     .albedo = base_color,
                     .roughness = (float)pbr.roughnessFactor,
                 });
+            } else {
+                material = Material(MaterialDiffuse{.albedo = base_color});
             }
 
             primitive.user_data = GeometryData{

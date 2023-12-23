@@ -10,6 +10,7 @@ namespace raytracer {
 enum class MaterialType : uint8_t {
     eDiffuse,
     eMetallic,
+    eDielectric,
 };
 
 struct MaterialDiffuse {
@@ -47,11 +48,32 @@ struct MaterialMetallic {
     }
 };
 
+struct MaterialDielectric {
+    float ior;
+
+    inline bool scatter(
+        sycl::float3 &dir,
+        sycl::float3 normal,
+        XorShift32State &rng,
+        sycl::float4 &attenuation
+    ) const {
+        attenuation = sycl::float4(1, 1, 1, 1);
+        float refraction_ratio = 1.0f / this->ior;
+
+        sycl::float3 unit_direction = normalize(dir);
+        sycl::float3 refracted = refract(unit_direction, normal, refraction_ratio);
+
+        dir = refracted;
+        return true;
+    }
+};
+
 struct Material {
     MaterialType type;
     union {
         MaterialDiffuse diffuse;
         MaterialMetallic metallic;
+        MaterialDielectric dielectric;
     };
 
     Material() {
@@ -63,6 +85,7 @@ struct Material {
         switch (this->type) {
         case MaterialType::eDiffuse: this->diffuse = other.diffuse; break;
         case MaterialType::eMetallic: this->metallic = other.metallic; break;
+        case MaterialType::eDielectric: this->dielectric = other.dielectric; break;
         }
     }
 
@@ -71,6 +94,7 @@ struct Material {
         switch (this->type) {
         case MaterialType::eDiffuse: this->diffuse = other.diffuse; break;
         case MaterialType::eMetallic: this->metallic = other.metallic; break;
+        case MaterialType::eDielectric: this->dielectric = other.dielectric; break;
         }
         return *this;
     }
@@ -80,9 +104,14 @@ struct Material {
         this->diffuse = diffuse;
     }
 
-    Material(MaterialMetallic dielectric) {
+    Material(MaterialMetallic metallic) {
         type = MaterialType::eMetallic;
-        this->metallic = dielectric;
+        this->metallic = metallic;
+    }
+
+    Material(MaterialDielectric dielectric) {
+        type = MaterialType::eDielectric;
+        this->dielectric = dielectric;
     }
 
     bool scatter(
@@ -111,6 +140,9 @@ struct Material {
             break;
         case MaterialType::eMetallic:
             res = this->metallic.scatter(dir, normal, rng, attenuation);
+            break;
+        case MaterialType::eDielectric:
+            res = this->dielectric.scatter(dir, normal, rng, attenuation);
             break;
         }
 

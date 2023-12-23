@@ -106,8 +106,22 @@ inline bool near_zero(sycl::float3 e) {
     return (sycl::fabs(e[0]) < s) && (sycl::fabs(e[1]) < s) && (sycl::fabs(e[2]) < s);
 }
 
-inline sycl::float3 reflect(const sycl::float3& v, const sycl::float3& n) {
-    return v - 2*dot(v,n)*n;
+inline float length_squared(const sycl::float3 &v) {
+    float length = sycl::length(v);
+    return length * length;
+}
+
+inline sycl::float3 reflect(const sycl::float3 &v, const sycl::float3 &n) {
+    return v - 2 * dot(v, n) * n;
+}
+
+inline sycl::float3
+refract(const sycl::float3 &uv, const sycl::float3 &n, float etai_over_etat) {
+    float cos_theta = fminf(sycl::dot(-uv, n), 1.0f);
+    sycl::float3 r_out_perp = etai_over_etat * (uv + cos_theta * n);
+    sycl::float3 r_out_parallel =
+        -sycl::sqrt(sycl::fabs(1.0f - length_squared(r_out_perp))) * n;
+    return r_out_perp + r_out_parallel;
 }
 
 } // namespace raytracer
