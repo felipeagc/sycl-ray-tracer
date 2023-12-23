@@ -52,7 +52,8 @@ static float4 render_pixel(
         sycl::float3 normal =
             normalize(sycl::float3(rayhit.hit.Ng_x, rayhit.hit.Ng_y, rayhit.hit.Ng_z));
 
-        if (auto result = user_data->material.scatter(rng, dir, normal); result) {
+        ScatterResult result;
+        if (user_data->material.scatter(rng, dir, normal, result)) {
             rayhit.ray.org_x = rayhit.ray.org_x + rayhit.ray.dir_x * rayhit.ray.tfar;
             rayhit.ray.org_z = rayhit.ray.org_z + rayhit.ray.dir_z * rayhit.ray.tfar;
             rayhit.ray.org_y = rayhit.ray.org_y + rayhit.ray.dir_y * rayhit.ray.tfar;
@@ -60,11 +61,11 @@ static float4 render_pixel(
             rayhit.ray.tnear = 0.0001f;
             rayhit.ray.tfar = std::numeric_limits<float>::infinity();
 
-            rayhit.ray.dir_x = result->dir.x();
-            rayhit.ray.dir_y = result->dir.y();
-            rayhit.ray.dir_z = result->dir.z();
+            rayhit.ray.dir_x = result.dir.x();
+            rayhit.ray.dir_y = result.dir.y();
+            rayhit.ray.dir_z = result.dir.z();
 
-            color *= result->attenuation;
+            color *= result.attenuation;
         } else {
             return float4(0, 0, 0, 1);
         }

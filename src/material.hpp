@@ -21,16 +21,18 @@ enum class MaterialType : uint8_t {
 struct MaterialDiffuse {
     sycl::float4 albedo;
 
-    inline std::optional<ScatterResult> scatter(
-        XorShift32State &rng, const sycl::float3 &dir, const sycl::float3 &normal
+    inline bool scatter(
+        XorShift32State &rng,
+        const sycl::float3 &dir,
+        const sycl::float3 &normal,
+        ScatterResult &result
     ) const {
-        ScatterResult result;
         result.dir = normal + rng.random_unit_vector();
         if (near_zero(dir)) {
             result.dir = normal;
         }
         result.attenuation = this->albedo;
-        return result;
+        return true;
     }
 };
 
@@ -38,30 +40,28 @@ struct MaterialMetallic {
     sycl::float4 albedo;
     float roughness;
 
-    inline std::optional<ScatterResult> scatter(
-        XorShift32State &rng, const sycl::float3 &dir, const sycl::float3 &normal
+    inline bool scatter(
+        XorShift32State &rng,
+        const sycl::float3 &dir,
+        const sycl::float3 &normal,
+        ScatterResult &result
     ) const {
-        ScatterResult result;
-
         sycl::float3 reflected = reflect(dir, normal);
         result.dir = reflected + this->roughness * rng.random_unit_vector();
-        if (dot(result.dir, normal) <= 0) {
-            return {};
-        }
-
         result.attenuation = this->albedo;
-        return result;
+        return dot(result.dir, normal) > 0;
     }
 };
 
 struct MaterialDielectric {
     float ior;
 
-    inline std::optional<ScatterResult> scatter(
-        XorShift32State &rng, const sycl::float3 &dir, const sycl::float3 &outward_normal
+    inline bool scatter(
+        XorShift32State &rng,
+        const sycl::float3 &dir,
+        const sycl::float3 &outward_normal,
+        ScatterResult &result
     ) const {
-        ScatterResult result;
-
         result.attenuation = sycl::float4(1, 1, 1, 1);
 
         bool front_face = dot(dir, outward_normal) < 0;
@@ -82,7 +82,7 @@ struct MaterialDielectric {
             result.dir = refract(unit_direction, normal, refraction_ratio);
         }
 
-        return result;
+        return true;
     }
 
     static float reflectance(float cosine, float ref_idx) {
@@ -139,13 +139,19 @@ struct Material {
         this->dielectric = dielectric;
     }
 
-    inline std::optional<ScatterResult> scatter(
-        XorShift32State &rng, const sycl::float3 &dir, const sycl::float3 &normal
+    inline bool scatter(
+        XorShift32State &rng,
+        const sycl::float3 &dir,
+        const sycl::float3 &normal,
+        ScatterResult &result
     ) const {
         switch (this->type) {
-        case MaterialType::eDiffuse: return this->diffuse.scatter(rng, dir, normal);
-        case MaterialType::eMetallic: return this->metallic.scatter(rng, dir, normal);
-        case MaterialType::eDielectric: return this->dielectric.scatter(rng, dir, normal);
+        case MaterialType::eDiffuse:
+            return this->diffuse.scatter(rng, dir, normal, result);
+        case MaterialType::eMetallic:
+            return this->metallic.scatter(rng, dir, normal, result);
+        case MaterialType::eDielectric:
+            return this->dielectric.scatter(rng, dir, normal, result);
         }
     }
 };
