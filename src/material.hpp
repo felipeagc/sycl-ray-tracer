@@ -40,10 +40,10 @@ struct MaterialMetallic {
         XorShift32State &rng,
         sycl::float4 &attenuation
     ) const {
-        sycl::float3 reflected = reflect(normalize(dir), normalize(normal));
-        dir = reflected;
+        sycl::float3 reflected = reflect(dir, normal);
+        dir = reflected + this->roughness * rng.random_unit_vector();
         attenuation = this->albedo;
-        return true;
+        return (dot(dir, normal) > 0);
     }
 };
 
@@ -99,7 +99,7 @@ struct Material {
         scattered.tfar = std::numeric_limits<float>::infinity();
 
         sycl::float3 dir =
-            sycl::float3(rayhit.ray.dir_x, rayhit.ray.dir_y, rayhit.ray.dir_z);
+            normalize(sycl::float3(rayhit.ray.dir_x, rayhit.ray.dir_y, rayhit.ray.dir_z));
 
         sycl::float3 normal =
             normalize(sycl::float3(rayhit.hit.Ng_x, rayhit.hit.Ng_y, rayhit.hit.Ng_z));
