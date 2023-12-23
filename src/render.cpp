@@ -20,31 +20,48 @@ static float4 render_pixel(
     RTCScene scene,
     int x,
     int y,
-    uint32_t *out_ray_count,
+    uint32_t &ray_count,
     sycl::stream os
 ) {
-    RTCIntersectArguments args;
-    rtcInitIntersectArguments(&args);
+    uint32_t local_ray_count = 0;
+    float4 color = float4(1, 1, 1, 1);
+
+    constexpr uint32_t max_bounces = 10;
 
     RTCRayHit rayhit;
     rayhit.ray = camera.get_ray(x, y, rng);
-    rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
-    rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+    for (uint32_t i = 0; i < max_bounces; ++i) {
+        ray_count++;
 
-    rtcIntersect1(scene, &rayhit, &args);
+        rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+        rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
 
-    (*out_ray_count)++;
+        rtcIntersect1(scene, &rayhit);
 
-    if (rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID) {
+        if (rayhit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+            return color;
+        }
+
+        rayhit.ray.org_x = rayhit.ray.org_x + rayhit.ray.dir_x * rayhit.ray.tfar;
+        rayhit.ray.org_y = rayhit.ray.org_y + rayhit.ray.dir_y * rayhit.ray.tfar;
+        rayhit.ray.org_z = rayhit.ray.org_z + rayhit.ray.dir_z * rayhit.ray.tfar;
+
+        float3 normal = float3(rayhit.hit.Ng_x, rayhit.hit.Ng_y, rayhit.hit.Ng_z);
+        float3 new_dir = rng.random_on_hemisphere(normal);
+
+        rayhit.ray.dir_x = new_dir.x();
+        rayhit.ray.dir_y = new_dir.y();
+        rayhit.ray.dir_z = new_dir.z();
+
+        rayhit.ray.tfar = std::numeric_limits<float>::infinity();
+        rayhit.ray.tnear = 0.0f;
+
         GeometryData *user_data =
             (GeometryData *)rtcGetGeometryUserDataFromScene(scene, rayhit.hit.instID[0]);
 
-        if (user_data) {
-            return user_data->base_color;
-        } else {
-            return float4(1, 0, 0, 1);
-        }
+        color *= user_data->base_color;
     }
+
     return float4(0, 0, 0, 1);
 }
 
@@ -94,9 +111,14 @@ void render_frame(
                     std::hash<std::size_t>{}(id.get_global_linear_id());
                 auto rng = XorShift32State{(uint32_t)init_generator_state};
 
+                constexpr uint32_t sample_count = 64;
+
                 uint32_t ray_count = 0;
-                float4 pixel_color =
-                    render_pixel(camera, rng, r_scene, x, y, &ray_count, os);
+                float4 pixel_color = float4(0, 0, 0, 0);
+                for (uint32_t i = 0; i < sample_count; ++i) {
+                    pixel_color += render_pixel(camera, rng, r_scene, x, y, ray_count, os);
+                }
+                pixel_color /= (float)sample_count;
 
                 image_writer.write(
                     int2(x, y),

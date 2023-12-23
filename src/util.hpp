@@ -5,12 +5,12 @@
 
 namespace raytracer {
 
-static void write_image(sycl::queue& q, sycl::image<2>& image, size_t width,
-                        size_t height) {
-    uint8_t* transfer_buf = sycl::malloc_shared<uint8_t>(width * height * 4, q);
+static void
+write_image(sycl::queue &q, sycl::image<2> &image, size_t width, size_t height) {
+    uint8_t *transfer_buf = sycl::malloc_shared<uint8_t>(width * height * 4, q);
     sycl::range<2> img_size = sycl::range<2>(width, height);
 
-    q.submit([&](sycl::handler& cgh) {
+    q.submit([&](sycl::handler &cgh) {
         auto read_accessor =
             image.get_access<sycl::float4, sycl::access::mode::read>(cgh);
         cgh.parallel_for(img_size, [=](sycl::id<2> id) {
@@ -36,18 +36,19 @@ static void write_image(sycl::queue& q, sycl::image<2>& image, size_t width,
  * This function allocated USM memory that is writeable by the device.
  */
 
-template<typename T>
-T* alignedSYCLMallocDeviceReadWrite(const sycl::queue& queue, size_t count, size_t align)
-{
-  if (count == 0)
-    return nullptr;
+template <typename T>
+T *alignedSYCLMallocDeviceReadWrite(
+    const sycl::queue &queue, size_t count, size_t align
+) {
+    if (count == 0) return nullptr;
 
-  assert((align & (align - 1)) == 0);
-  T *ptr = (T*)sycl::aligned_alloc(align, count * sizeof(T), queue, sycl::usm::alloc::shared);
-  if (count != 0 && ptr == nullptr)
-    throw std::bad_alloc();
+    assert((align & (align - 1)) == 0);
+    T *ptr = (T *)sycl::aligned_alloc(
+        align, count * sizeof(T), queue, sycl::usm::alloc::shared
+    );
+    if (count != 0 && ptr == nullptr) throw std::bad_alloc();
 
-  return ptr;
+    return ptr;
 }
 
 /*
@@ -56,23 +57,30 @@ T* alignedSYCLMallocDeviceReadWrite(const sycl::queue& queue, size_t count, size
  * application.
  */
 
-template<typename T>
-T* alignedSYCLMallocDeviceReadOnly(const sycl::queue& queue, size_t count, size_t align)
-{
-  if (count == 0)
-    return nullptr;
+template <typename T>
+T *alignedSYCLMallocDeviceReadOnly(const sycl::queue &queue, size_t count, size_t align) {
+    if (count == 0) return nullptr;
 
-  assert((align & (align - 1)) == 0);
-  T *ptr = (T*)sycl::aligned_alloc_shared(align, count * sizeof(T), queue, sycl::ext::oneapi::property::usm::device_read_only());
-  if (count != 0 && ptr == nullptr)
-    throw std::bad_alloc();
+    assert((align & (align - 1)) == 0);
+    T *ptr = (T *)sycl::aligned_alloc_shared(
+        align,
+        count * sizeof(T),
+        queue,
+        sycl::ext::oneapi::property::usm::device_read_only()
+    );
+    if (count != 0 && ptr == nullptr) throw std::bad_alloc();
 
-  return ptr;
+    return ptr;
 }
 
-inline void alignedSYCLFree(const sycl::queue& queue, void* ptr)
-{
-  if (ptr) sycl::free(ptr, queue);
+inline void alignedSYCLFree(const sycl::queue &queue, void *ptr) {
+    if (ptr) sycl::free(ptr, queue);
 }
 
-}  // namespace raytracer
+// Vector utilities
+
+inline sycl::float3 unit_vector(sycl::float3 v) {
+    return v / sycl::length(v);
+}
+
+} // namespace raytracer

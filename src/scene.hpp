@@ -11,9 +11,41 @@
 
 namespace raytracer {
 
+enum class MaterialType : uint8_t {
+    eDiffuse,
+    eDielectric,
+};
+
+struct MaterialDiffuse {
+
+};
+
+struct MaterialDielectric {
+
+};
+
+struct Material {
+    MaterialType type;
+    union {
+        MaterialDiffuse diffuse;
+        MaterialDielectric dielectric;
+    };
+
+    Material(MaterialDiffuse diffuse) {
+        type = MaterialType::eDiffuse;
+        this->diffuse = diffuse;
+    }
+
+    Material(MaterialDielectric dielectric) {
+        type = MaterialType::eDielectric;
+        this->dielectric = dielectric;
+    }
+};
+
 struct GeometryData {
     sycl::float4 base_color;
     sycl::float4 emissive;
+    Material material = Material(MaterialDiffuse{});
 };
 
 struct Primitive {

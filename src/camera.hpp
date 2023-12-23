@@ -67,6 +67,7 @@ struct Camera {
 
             .tfar = std::numeric_limits<float>::infinity(),
             .mask = UINT32_MAX,
+            .id = 0,
             .flags = 0,
         };
     }
