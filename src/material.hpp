@@ -64,9 +64,17 @@ struct MaterialDielectric {
         float refraction_ratio = front_face ? (1.0f / this->ior) : this->ior;
 
         sycl::float3 unit_direction = normalize(dir);
-        sycl::float3 refracted = refract(unit_direction, normal, refraction_ratio);
+        float cos_theta = fminf(dot(-unit_direction, normal), 1.0f);
+        float sin_theta = sycl::sqrt(1.0f - cos_theta*cos_theta);
 
-        dir = refracted;
+        bool cannot_refract = refraction_ratio * sin_theta > 1.0f;
+
+        if (cannot_refract) {
+            dir = reflect(unit_direction, normal);
+        } else {
+            dir = refract(unit_direction, normal, refraction_ratio);
+        }
+
         return true;
     }
 };
