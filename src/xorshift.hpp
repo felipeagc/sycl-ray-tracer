@@ -36,7 +36,7 @@ struct XorShift32State {
     }
 
     inline sycl::float3 random_unit_vector() {
-        return unit_vector(this->vec(-1, 1));
+        return normalize(this->vec(-1, 1));
     }
 
     inline sycl::float3 random_on_hemisphere(const sycl::float3 &normal) {

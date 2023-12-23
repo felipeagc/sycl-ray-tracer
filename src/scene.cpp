@@ -163,8 +163,9 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             const tinygltf::Primitive &gltf_primitive = gltf_mesh.primitives[j];
             Primitive &primitive = mesh.primitives[j];
 
-            auto &base_color_vec = gltf_model.materials[gltf_primitive.material]
-                                       .pbrMetallicRoughness.baseColorFactor;
+            auto &pbr =
+                gltf_model.materials[gltf_primitive.material].pbrMetallicRoughness;
+            auto &base_color_vec = pbr.baseColorFactor;
             sycl::float4 base_color = sycl::float4(
                 base_color_vec[0], base_color_vec[1], base_color_vec[2], base_color_vec[3]
             );
@@ -175,9 +176,19 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 emissive_vec[0], emissive_vec[1], emissive_vec[2], emissive_vec[3]
             );
 
+            Material material;
+            if (pbr.metallicFactor < 0.01f) {
+                material = Material(MaterialDiffuse{.albedo = base_color});
+            } else {
+                material = Material(MaterialMetallic{
+                    .albedo = base_color,
+                    .roughness = (float)pbr.roughnessFactor,
+                });
+            }
+
             primitive.user_data = GeometryData{
                 .emissive = emissive,
-                .material = Material(MaterialDiffuse{ .albedo = base_color }),
+                .material = material,
             };
 
             // We only work with indices

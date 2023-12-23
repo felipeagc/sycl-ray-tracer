@@ -79,10 +79,6 @@ inline void alignedSYCLFree(const sycl::queue &queue, void *ptr) {
 
 // Vector utilities
 
-inline sycl::float3 unit_vector(sycl::float3 v) {
-    return v / sycl::length(v);
-}
-
 inline float linear_to_gamma(float linear_component) {
     return sycl::sqrt(linear_component);
 }
@@ -108,6 +104,10 @@ inline bool near_zero(sycl::float3 e) {
     // Return true if the vector is close to zero in all dimensions.
     float s = 1e-8f;
     return (sycl::fabs(e[0]) < s) && (sycl::fabs(e[1]) < s) && (sycl::fabs(e[2]) < s);
+}
+
+inline sycl::float3 reflect(const sycl::float3& v, const sycl::float3& n) {
+    return v - 2*dot(v,n)*n;
 }
 
 } // namespace raytracer

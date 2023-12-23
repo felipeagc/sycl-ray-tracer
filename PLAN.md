@@ -1,5 +1,11 @@
 # Plan
 
+## Embree
+
+TODO:
+- [ ] Load vertex normal attributes
+- [ ] Use hit (u, v) to interpolate normals (to get smooth normals)
+
 ## Wavefront raytracing
 
 Consists of 4 phases:
