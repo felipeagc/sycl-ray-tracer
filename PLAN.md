@@ -1,10 +1,12 @@
 # Plan
 
-## Embree
-
 TODO:
-- [ ] Load vertex normal attributes
-- [ ] Use hit (u, v) to interpolate normals (to get smooth normals)
+- [x] Load vertex normal attributes
+- [x] Use hit (u, v) to interpolate normals (to get smooth normals)
+- [ ] Light emittance
+- [ ] Load texture UVs
+- [ ] Load textures
+- [ ] Sample texture colors
 
 ## Wavefront raytracing
 

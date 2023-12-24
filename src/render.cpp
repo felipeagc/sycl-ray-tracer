@@ -22,7 +22,7 @@ struct RenderContext {
     RTCScene scene;
 };
 
-static float4 render_pixel(
+static float3 render_pixel(
     const RenderContext &ctx,
     XorShift32State &rng,
     int2 pixel_coords,
@@ -30,7 +30,7 @@ static float4 render_pixel(
     sycl::stream os
 ) {
     uint32_t local_ray_count = 0;
-    float4 color = float4(1, 1, 1, 1);
+    float3 attenuation = float3(1, 1, 1);
 
     constexpr uint32_t max_bounces = 10;
 
@@ -42,8 +42,10 @@ static float4 render_pixel(
         rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
         rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
         rtcIntersect1(ctx.scene, &rayhit);
+
+        // If not hit, return sky color
         if (rayhit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
-            return color * float4(ctx.sky_color, 1.0f);
+            return attenuation * ctx.sky_color;
         }
 
         GeometryData *user_data = (GeometryData *)rtcGetGeometryUserDataFromScene(
@@ -71,6 +73,8 @@ static float4 render_pixel(
         const float3 dir =
             normalize(float3(rayhit.ray.dir_x, rayhit.ray.dir_y, rayhit.ray.dir_z));
 
+        float3 emitted = user_data->material.emitted();
+
         ScatterResult result;
         if (user_data->material.scatter(rng, dir, normal, result)) {
             rayhit.ray.org_x = rayhit.ray.org_x + rayhit.ray.dir_x * rayhit.ray.tfar;
@@ -84,13 +88,13 @@ static float4 render_pixel(
             rayhit.ray.dir_y = result.dir.y();
             rayhit.ray.dir_z = result.dir.z();
 
-            color *= result.attenuation;
+            attenuation = emitted + attenuation * result.attenuation;
         } else {
-            return float4(0, 0, 0, 1);
+            return emitted;
         }
     }
 
-    return float4(0, 0, 0, 1);
+    return float3(0, 0, 0);
 }
 
 void render_frame(
@@ -146,7 +150,7 @@ void render_frame(
                 constexpr uint32_t sample_count = 256;
 
                 uint32_t ray_count = 0;
-                float4 pixel_color = float4(0, 0, 0, 0);
+                float3 pixel_color = float3(0, 0, 0);
                 for (uint32_t i = 0; i < sample_count; ++i) {
                     pixel_color += render_pixel(ctx, rng, pixel_coords, ray_count, os);
                 }
@@ -154,7 +158,7 @@ void render_frame(
 
                 pixel_color = linear_to_gamma(pixel_color);
 
-                image_writer.write(pixel_coords, pixel_color);
+                image_writer.write(pixel_coords, float4(pixel_color, 1.0f));
 
                 ray_count_ref.fetch_add(ray_count);
             }

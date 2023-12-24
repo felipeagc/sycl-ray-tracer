@@ -19,7 +19,7 @@ struct GeometryData {
     glm::vec3 *normal_buffer;
     uint32_t *index_buffer;
     glm::mat3 obj_to_world;
-    Material material = MaterialDiffuse{.albedo = sycl::float4(1, 0, 0, 1)};
+    Material material = MaterialDiffuse{};
 };
 
 struct Primitive {
@@ -31,7 +31,7 @@ struct Primitive {
 
     RTCScene scene;
 
-    Material material = MaterialDiffuse{.albedo = sycl::float4(1, 0, 0, 1)};
+    Material material = MaterialDiffuse{};
 };
 
 struct Mesh {

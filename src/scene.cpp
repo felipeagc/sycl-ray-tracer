@@ -158,15 +158,13 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
 
             const auto &pbr = gltf_material.pbrMetallicRoughness;
             const auto &base_color_vec = pbr.baseColorFactor;
-            sycl::float4 base_color = sycl::float4(
-                base_color_vec[0], base_color_vec[1], base_color_vec[2], base_color_vec[3]
-            );
+            sycl::float3 base_color =
+                sycl::float3(base_color_vec[0], base_color_vec[1], base_color_vec[2]);
 
             const auto &emissive_vec =
                 gltf_model.materials[gltf_primitive.material].emissiveFactor;
-            sycl::float4 emissive = sycl::float4(
-                emissive_vec[0], emissive_vec[1], emissive_vec[2], emissive_vec[3]
-            );
+            sycl::float3 emissive =
+                sycl::float3(emissive_vec[0], emissive_vec[1], emissive_vec[2]);
 
             if (auto ior_ext = gltf_material.extensions.find("KHR_materials_ior");
                 ior_ext != gltf_material.extensions.end()) {
@@ -182,8 +180,21 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 });
                 fmt::println("Metallic: roughness={}", (float)pbr.roughnessFactor);
             } else {
-                primitive.material = Material(MaterialDiffuse{.albedo = base_color});
-                fmt::println("Diffuse");
+                float emissive_strength = 0.0f;
+                if (auto emissive_strength_ext =
+                        gltf_material.extensions.find("KHR_materials_emissive_strength");
+                    emissive_strength_ext != gltf_material.extensions.end()) {
+                    emissive_strength =
+                        (float)emissive_strength_ext->second.Get("emissiveStrength")
+                            .GetNumberAsDouble();
+                }
+                emissive = emissive * emissive_strength;
+
+                primitive.material = Material(MaterialDiffuse{
+                    .albedo = base_color,
+                    .emissive = emissive,
+                });
+                fmt::println("Diffuse: albedo={}, emissive={}", base_color, emissive);
             }
 
             // We only work with indices
