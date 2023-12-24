@@ -51,7 +51,10 @@ struct Camera {
     }
 
     // Get a randomly sampled camera ray for the pixel at location x,y.
-    RTCRay get_ray(int x, int y, XorShift32State &rng) const {
+    RTCRay get_ray(sycl::int2 pixel_coords, XorShift32State &rng) const {
+        int x = pixel_coords[0];
+        int y = pixel_coords[1];
+
         auto pixel_center =
             pixel00_loc + ((float)x * pixel_delta_u) + ((float)y * pixel_delta_v);
         auto pixel_sample = pixel_center + pixel_sample_square(rng);

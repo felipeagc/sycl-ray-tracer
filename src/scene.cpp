@@ -8,39 +8,11 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <fmt/core.h>
 
+#include "formatters.hpp"
 #include "util.hpp"
 
 static_assert(sizeof(glm::vec3) == 3 * sizeof(float));
 static_assert(alignof(glm::vec3) == alignof(float));
-
-template <> struct ::fmt::formatter<glm::vec3> {
-    constexpr auto parse(format_parse_context &ctx) -> format_parse_context::iterator {
-        auto it = ctx.begin(), end = ctx.end();
-        if (it != end && *it != '}') throw_format_error("invalid format");
-        return it;
-    }
-    auto format(glm::vec3 t, fmt::format_context &ctx) {
-        return fmt::format_to(ctx.out(), "{} {} {}", t[0], t[1], t[2]);
-    }
-};
-
-template <> struct ::fmt::formatter<glm::mat4> {
-    constexpr auto parse(format_parse_context &ctx) -> format_parse_context::iterator {
-        auto it = ctx.begin(), end = ctx.end();
-        if (it != end && *it != '}') throw_format_error("invalid format");
-        return it;
-    }
-
-    auto format(glm::mat4 m, fmt::format_context &ctx) {
-        auto appender = ctx.out();
-        for (int i = 0; i < 4; ++i) {
-            appender = fmt::format_to(
-                appender, "{} {} {} {}\n", m[i][0], m[i][1], m[i][2], m[i][3]
-            );
-        }
-        return appender;
-    }
-};
 
 namespace raytracer {
 glm::mat4 Node::local_matrix() const {
@@ -84,6 +56,7 @@ Scene::Scene(App &app, const std::string &filepath, glm::vec3 global_scale)
     std::string err;
     std::string warn;
 
+    loader.SetStoreOriginalJSONForExtrasAndExtensions(true);
     bool ret = loader.LoadBinaryFromFile(&gltf_model, &err, &warn, filepath.c_str());
 
     if (!warn.empty()) {
@@ -98,6 +71,16 @@ Scene::Scene(App &app, const std::string &filepath, glm::vec3 global_scale)
 
     const tinygltf::Scene &scene =
         gltf_model.scenes[gltf_model.defaultScene > -1 ? gltf_model.defaultScene : 0];
+
+    if (auto sky_color = scene.extras.Get("sky_color");
+        sky_color.IsArray() && sky_color.Size() == 3) {
+        this->sky_color = sycl::float3(
+            (float)sky_color.Get(0).GetNumberAsDouble(),
+            (float)sky_color.Get(1).GetNumberAsDouble(),
+            (float)sky_color.Get(2).GetNumberAsDouble()
+        );
+        fmt::println("Sky color: {}", this->sky_color);
+    }
 
     this->nodes.resize(gltf_model.nodes.size());
     for (uint32_t node_index : scene.nodes) {

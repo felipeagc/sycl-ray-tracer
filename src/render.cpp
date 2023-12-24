@@ -16,12 +16,16 @@ using sycl::range;
 
 namespace raytracer {
 
+struct RenderContext {
+    Camera camera;
+    sycl::float3 sky_color;
+    RTCScene scene;
+};
+
 static float4 render_pixel(
-    const Camera &camera,
+    const RenderContext &ctx,
     XorShift32State &rng,
-    RTCScene scene,
-    int x,
-    int y,
+    int2 pixel_coords,
     uint32_t &ray_count,
     sycl::stream os
 ) {
@@ -31,19 +35,20 @@ static float4 render_pixel(
     constexpr uint32_t max_bounces = 10;
 
     RTCRayHit rayhit;
-    rayhit.ray = camera.get_ray(x, y, rng);
+    rayhit.ray = ctx.camera.get_ray(pixel_coords, rng);
     for (uint32_t i = 0; i < max_bounces; ++i) {
         ray_count++;
 
         rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
         rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
-        rtcIntersect1(scene, &rayhit);
+        rtcIntersect1(ctx.scene, &rayhit);
         if (rayhit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
-            return color;
+            return color * float4(ctx.sky_color, 1.0f);
         }
 
-        GeometryData *user_data =
-            (GeometryData *)rtcGetGeometryUserDataFromScene(scene, rayhit.hit.instID[0]);
+        GeometryData *user_data = (GeometryData *)rtcGetGeometryUserDataFromScene(
+            ctx.scene, rayhit.hit.instID[0]
+        );
 
         glm::vec2 bary = {rayhit.hit.u, rayhit.hit.v};
 
@@ -102,7 +107,6 @@ void render_frame(
 
     auto e = app.queue.submit([&](sycl::handler &cgh) {
         sycl::stream os(8192, 256, cgh);
-        RTCScene r_scene = scene.scene;
 
         auto image_writer = image.get_access<float4, sycl::access::mode::write>(cgh);
         auto ray_count = ray_count_buffer.get_access<sycl::access_mode::write>(cgh);
@@ -112,6 +116,12 @@ void render_frame(
         n_groups[0] = ((img_size[0] + local_size[0] - 1) / local_size[0]);
         n_groups[1] = ((img_size[1] + local_size[1] - 1) / local_size[1]);
 
+        RenderContext ctx = {
+            .camera = camera,
+            .sky_color = scene.sky_color,
+            .scene = scene.scene,
+        };
+
         cgh.parallel_for(
             sycl::nd_range<2>(n_groups * local_size, local_size),
             [=](sycl::nd_item<2> id) {
@@ -120,15 +130,14 @@ void render_frame(
                     return;
                 }
 
+                int2 pixel_coords = {global_id[0], global_id[1]};
+
                 sycl::atomic_ref<
                     uint32_t,
                     sycl::memory_order_relaxed,
                     sycl::memory_scope_device,
                     sycl::access::address_space::global_space>
                     ray_count_ref(ray_count[0]);
-
-                int x = global_id[0];
-                int y = global_id[1];
 
                 auto init_generator_state =
                     std::hash<std::size_t>{}(id.get_global_linear_id());
@@ -139,14 +148,13 @@ void render_frame(
                 uint32_t ray_count = 0;
                 float4 pixel_color = float4(0, 0, 0, 0);
                 for (uint32_t i = 0; i < sample_count; ++i) {
-                    pixel_color +=
-                        render_pixel(camera, rng, r_scene, x, y, ray_count, os);
+                    pixel_color += render_pixel(ctx, rng, pixel_coords, ray_count, os);
                 }
                 pixel_color /= (float)sample_count;
 
                 pixel_color = linear_to_gamma(pixel_color);
 
-                image_writer.write(int2(x, y), pixel_color);
+                image_writer.write(pixel_coords, pixel_color);
 
                 ray_count_ref.fetch_add(ray_count);
             }

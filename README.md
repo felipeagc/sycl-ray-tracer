@@ -39,6 +39,28 @@ sudo apt install intel-renderkit
 sudo apt install intel-oneapi-runtime-libs
 ```
 
+## Authoring scenes in Blender
+
+Export the scene as GLTF.
+
+### Sky color
+Add a custom property to the scene called `sky_color` with the type float array with 3 elements.
+
+### Materials
+
+#### Dielectric material
+In the Principled BSDF node, set the IOR to something other than the default (1.5) and the transmission weight to a non-zero value.
+
+#### Metallic material
+Used if the metallic property in the Principled BSDF node is non-zero.
+
+The metallic value is not actually used in lighting calculations,
+it just identifies that the material type should be metallic.
+The roughness value is used for shading, though.
+
+#### Diffuse material
+Used if no other criteria matches.
+
 ## Tasks
 
 ### generate

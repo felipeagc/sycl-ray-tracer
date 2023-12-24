@@ -70,6 +70,8 @@ struct Scene {
     glm::vec3 camera_direction;
     float camera_focal_length;
 
+    sycl::float3 sky_color = {0.5f, 0.7f, 1.0f};
+
     Scene(const Scene &) = delete;
     Scene &operator=(const Scene &) = delete;
 
