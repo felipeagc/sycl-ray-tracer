@@ -188,17 +188,19 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             if (auto ior_ext = gltf_material.extensions.find("KHR_materials_ior");
                 ior_ext != gltf_material.extensions.end()) {
                 float ior = (float)ior_ext->second.Get("ior").GetNumberAsDouble();
-                primitive.material = Material(MaterialDielectric{.ior = ior});
-
-                fmt::println("IOR: {}", ior);
-            } else
-                if (pbr.metallicFactor > 0.01f) {
+                primitive.material = Material(MaterialDielectric{
+                    .ior = ior,
+                });
+                fmt::println("Dielectric: ior={}", ior);
+            } else if (pbr.metallicFactor > 0.01f) {
                 primitive.material = Material(MaterialMetallic{
                     .albedo = base_color,
                     .roughness = (float)pbr.roughnessFactor,
                 });
+                fmt::println("Metallic: roughness={}", (float)pbr.roughnessFactor);
             } else {
                 primitive.material = Material(MaterialDiffuse{.albedo = base_color});
+                fmt::println("Diffuse");
             }
 
             // We only work with indices

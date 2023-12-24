@@ -62,7 +62,7 @@ struct MaterialDielectric {
         const sycl::float3 &outward_normal,
         ScatterResult &result
     ) const {
-        result.attenuation = sycl::float4(0.9, 0.9, 1, 1);
+        result.attenuation = sycl::float4(1, 1, 1, 1);
 
         bool front_face = dot(dir, outward_normal) < 0;
 

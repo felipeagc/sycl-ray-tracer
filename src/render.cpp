@@ -47,12 +47,6 @@ static float4 render_pixel(
 
         glm::vec2 bary = {rayhit.hit.u, rayhit.hit.v};
 
-        glm::mat4 transform;
-        rtcGetGeometryTransformFromScene(
-            scene, rayhit.hit.geomID, 0, RTC_FORMAT_FLOAT4X4_COLUMN_MAJOR, &transform
-        );
-        glm::mat3 normal_transform = glm::transpose(glm::inverse(glm::mat3(transform)));
-
         const uint32_t *prim_indices = &user_data->index_buffer[rayhit.hit.primID * 3];
         std::array<glm::vec3, 3> vertex_normals = {
             user_data->normal_buffer[prim_indices[0]],
@@ -60,33 +54,14 @@ static float4 render_pixel(
             user_data->normal_buffer[prim_indices[2]],
         };
 
-        // os << "N[0] = " << vertex_normals[0].x << ", " << vertex_normals[0].y << ", "
-        //    << vertex_normals[0].z << sycl::endl;
-
-        // os << "N[1] = " << vertex_normals[1].x << ", " << vertex_normals[1].y << ", "
-        //    << vertex_normals[1].z << sycl::endl;
-
-        // os << "N[2] = " << vertex_normals[2].x << ", " << vertex_normals[2].y << ", "
-        //    << vertex_normals[2].z << sycl::endl;
-
-        // TODO: transform into world space
+        // Calculate normals
         glm::vec3 vertex_normal = glm::normalize(
             (1 - bary.x - bary.y) * vertex_normals[0] + bary.x * vertex_normals[1] +
             bary.y * vertex_normals[2]
         );
-        // vertex_normal = normal_transform * vertex_normal;
 
-        glm::vec3 g_normal = glm::normalize(glm::vec3(rayhit.hit.Ng_x, rayhit.hit.Ng_y, rayhit.hit.Ng_z));
-        // g_normal = (g_normal * vertex_normal);
-        // g_normal = user_data->obj_to_world * vertex_normal;
-        g_normal = normal_transform * vertex_normal;
-
-        // const float3 normal = normalize(
-        //     normalize(float3(rayhit.hit.Ng_x, rayhit.hit.Ng_y, rayhit.hit.Ng_z)) *
-        //     normalize(float3(vertex_normal.x, vertex_normal.y, vertex_normal.z))
-        // );
-
-        const float3 normal = float3(g_normal.x, g_normal.y, g_normal.z);
+        glm::vec3 g_normal = user_data->obj_to_world * vertex_normal;
+        const float3 normal = normalize(float3(g_normal.x, g_normal.y, g_normal.z));
 
         const float3 dir =
             normalize(float3(rayhit.ray.dir_x, rayhit.ray.dir_y, rayhit.ray.dir_z));
