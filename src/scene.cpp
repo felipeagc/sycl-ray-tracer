@@ -185,26 +185,21 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 emissive_vec[0], emissive_vec[1], emissive_vec[2], emissive_vec[3]
             );
 
-            Material material;
             if (auto ior_ext = gltf_material.extensions.find("KHR_materials_ior");
                 ior_ext != gltf_material.extensions.end()) {
                 float ior = (float)ior_ext->second.Get("ior").GetNumberAsDouble();
-                material = Material(MaterialDielectric{.ior = ior});
+                primitive.material = Material(MaterialDielectric{.ior = ior});
 
                 fmt::println("IOR: {}", ior);
-            } else if (pbr.metallicFactor > 0.01f) {
-                material = Material(MaterialMetallic{
+            } else
+                if (pbr.metallicFactor > 0.01f) {
+                primitive.material = Material(MaterialMetallic{
                     .albedo = base_color,
                     .roughness = (float)pbr.roughnessFactor,
                 });
             } else {
-                material = Material(MaterialDiffuse{.albedo = base_color});
+                primitive.material = Material(MaterialDiffuse{.albedo = base_color});
             }
-
-            primitive.user_data = GeometryData{
-                .emissive = emissive,
-                .material = material,
-            };
 
             // We only work with indices
             bool has_indices = gltf_primitive.indices > -1;
@@ -421,7 +416,13 @@ void Scene::load_node(
 
             GeometryData *user_data =
                 alignedSYCLMallocDeviceReadOnly<GeometryData>(app.queue, 1, 16);
-            *user_data = prim.user_data;
+            *user_data = GeometryData{
+                .vertex_buffer = prim.positions,
+                .normal_buffer = prim.normals,
+                .index_buffer = prim.indices,
+                .obj_to_world = glm::transpose(glm::inverse(glm::mat3(global_transform))),
+                .material = prim.material,
+            };
             rtcSetGeometryUserData(*geom, user_data);
 
             rtcCommitGeometry(*geom);

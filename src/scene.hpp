@@ -15,8 +15,11 @@
 namespace raytracer {
 
 struct GeometryData {
-    sycl::float4 emissive;
-    Material material = MaterialDiffuse{.albedo = sycl::float4(1, 1, 1, 1)};
+    glm::vec3 *vertex_buffer;
+    glm::vec3 *normal_buffer;
+    uint32_t *index_buffer;
+    glm::mat3 obj_to_world;
+    Material material = MaterialDiffuse{.albedo = sycl::float4(1, 0, 0, 1)};
 };
 
 struct Primitive {
@@ -27,7 +30,8 @@ struct Primitive {
     uint32_t index_count;
 
     RTCScene scene;
-    GeometryData user_data;
+
+    Material material = MaterialDiffuse{.albedo = sycl::float4(1, 0, 0, 1)};
 };
 
 struct Mesh {
