@@ -29,8 +29,8 @@ static float3 render_pixel(
     uint32_t &ray_count,
     sycl::stream os
 ) {
-    uint32_t local_ray_count = 0;
-    float3 attenuation = float3(1, 1, 1);
+    float3 attenuation = float3(1.0f);
+    float3 radiance = float3(0.0f);
 
     constexpr uint32_t max_bounces = 10;
 
@@ -45,7 +45,7 @@ static float3 render_pixel(
 
         // If not hit, return sky color
         if (rayhit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
-            return attenuation * ctx.sky_color;
+            return attenuation * (ctx.sky_color + radiance);
         }
 
         GeometryData *user_data = (GeometryData *)rtcGetGeometryUserDataFromScene(
@@ -73,7 +73,7 @@ static float3 render_pixel(
         const float3 dir =
             normalize(float3(rayhit.ray.dir_x, rayhit.ray.dir_y, rayhit.ray.dir_z));
 
-        float3 emitted = user_data->material.emitted();
+        radiance += user_data->material.emitted();
 
         ScatterResult result;
         if (user_data->material.scatter(rng, dir, normal, result)) {
@@ -88,9 +88,9 @@ static float3 render_pixel(
             rayhit.ray.dir_y = result.dir.y();
             rayhit.ray.dir_z = result.dir.z();
 
-            attenuation = emitted + attenuation * result.attenuation;
+            attenuation = attenuation * result.attenuation;
         } else {
-            return emitted;
+            return attenuation * radiance;
         }
     }
 
@@ -147,7 +147,7 @@ void render_frame(
                     std::hash<std::size_t>{}(id.get_global_linear_id());
                 auto rng = XorShift32State{(uint32_t)init_generator_state};
 
-                constexpr uint32_t sample_count = 256;
+                constexpr uint32_t sample_count = 512;
 
                 uint32_t ray_count = 0;
                 float3 pixel_color = float3(0, 0, 0);

@@ -3,7 +3,7 @@
 TODO:
 - [x] Load vertex normal attributes
 - [x] Use hit (u, v) to interpolate normals (to get smooth normals)
-- [ ] Light emittance
+- [x] Light emittance
 - [ ] Load texture UVs
 - [ ] Load textures
 - [ ] Sample texture colors
