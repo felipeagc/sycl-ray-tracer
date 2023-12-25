@@ -69,6 +69,7 @@ Scene::Scene(App &app, const std::string &filepath, glm::vec3 global_scale)
         throw std::runtime_error("Failed to load .glTF : " + err);
     }
 
+    load_images(app, gltf_model);
     load_primitives(app, gltf_model);
 
     const tinygltf::Scene &scene =
@@ -144,6 +145,20 @@ glm::mat4 Scene::node_global_matrix(const Node &node) const {
     return m;
 }
 
+void Scene::load_images(App &app, const tinygltf::Model &gltf_model) {
+    this->images.resize(gltf_model.meshes.size());
+
+    for (size_t i = 0; i < gltf_model.images.size(); i++) {
+        const tinygltf::Image &gltf_image = gltf_model.images[i];
+
+        assert(!gltf_image.as_is[0]);
+
+        this->images[i] = this->image_baker.upload_image(
+            gltf_image.width, gltf_image.height, gltf_image.image.data()
+        );
+    }
+}
+
 void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
     this->meshes.resize(gltf_model.meshes.size());
 
@@ -184,8 +199,14 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 };
                 fmt::println("Dielectric: ior={}", ior);
             } else if (pbr.metallicFactor > 0.01f) {
+                Texture texture = Texture(base_color);
+                if (gltf_material.pbrMetallicRoughness.baseColorTexture.index > -1) {
+                    texture = Texture(this->images[gltf_material.pbrMetallicRoughness
+                                               .baseColorTexture.index]);
+                }
+
                 primitive.material = MaterialMetallic{
-                    .albedo = base_color,
+                    .albedo = texture,
                     .roughness = (float)pbr.roughnessFactor,
                 };
                 fmt::println("Metallic: roughness={}", (float)pbr.roughnessFactor);
@@ -200,9 +221,14 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 }
                 emissive = emissive * emissive_strength;
 
-                // TODO: load image here
+                Texture texture = Texture(base_color);
+                if (gltf_material.pbrMetallicRoughness.baseColorTexture.index > -1) {
+                    texture = Texture(this->images[gltf_material.pbrMetallicRoughness
+                                               .baseColorTexture.index]);
+                }
+
                 primitive.material = MaterialDiffuse{
-                    .albedo = Texture(base_color),
+                    .albedo = texture,
                     .emissive = emissive,
                 };
                 fmt::println("Diffuse: albedo={}, emissive={}", base_color, emissive);
@@ -286,6 +312,7 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 uv_accessor.ByteStride(uv_view)
                     ? (uv_accessor.ByteStride(uv_view) / sizeof(float))
                     : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC2);
+
 
             primitive.uvs = alignedSYCLMallocDeviceReadOnly<sycl::float2>(
                 app.queue, primitive.vertex_count, 16

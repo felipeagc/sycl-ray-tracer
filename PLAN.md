@@ -5,7 +5,7 @@ TODO:
 - [x] Use hit (u, v) to interpolate normals (to get smooth normals)
 - [x] Light emittance
 - [x] Load texture UVs
-- [ ] Load textures
+- [x] Load textures
 - [x] Sample texture colors
 
 ## Wavefront raytracing

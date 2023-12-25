@@ -26,13 +26,28 @@ struct Texture {
 
     Texture(ImageRef image_ref) : type(TextureType::eImage), image_ref(image_ref) {}
 
+    Texture(const Texture &other) {
+        this->type = other.type;
+        switch (this->type) {
+        case TextureType::eColor: this->color = other.color; break;
+        case TextureType::eImage: this->image_ref = other.image_ref; break;
+        }
+    }
+    Texture &operator=(const Texture &other) {
+        this->type = other.type;
+        switch (this->type) {
+        case TextureType::eColor: this->color = other.color; break;
+        case TextureType::eImage: this->image_ref = other.image_ref; break;
+        }
+        return *this;
+    }
+
     inline sycl::float3 sample(const RenderContext &ctx, sycl::float2 uv) const {
         switch (this->type) {
         case TextureType::eColor: return this->color;
         case TextureType::eImage:
-            sycl::float4 color = ctx.image_reader[this->image_ref.index].read(
-                sycl::float2(0.0f, 0.0f), ctx.sampler
-            );
+            sycl::float4 color =
+                ctx.image_reader[this->image_ref.index].read(uv, ctx.sampler);
             return sycl::float3(color.x(), color.y(), color.z());
         }
     }
@@ -76,7 +91,7 @@ struct MaterialDiffuse {
 };
 
 struct MaterialMetallic {
-    sycl::float3 albedo;
+    Texture albedo;
     float roughness;
 
     inline bool scatter(
@@ -89,7 +104,7 @@ struct MaterialMetallic {
     ) const {
         sycl::float3 reflected = reflect(dir, normal);
         result.dir = reflected + this->roughness * rng.random_unit_vector();
-        result.attenuation = this->albedo;
+        result.attenuation = this->albedo.sample(ctx, uv);
         return dot(result.dir, normal) > 0;
     }
 

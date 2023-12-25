@@ -69,7 +69,7 @@ struct ImageManager {
                 std::vector<uint8_t>(IMAGE_SIZE.x() * IMAGE_SIZE.y() * IMAGE_CHANNELS),
         });
 
-        stbir_resize_uint8_srgb(
+        uint8_t *output = stbir_resize_uint8_srgb(
             data,
             width,
             height,
@@ -79,6 +79,16 @@ struct ImageManager {
             IMAGE_SIZE.y(),
             0,
             STBIR_RGBA
+        );
+        assert(output == this->images[image_index].data.data());
+
+        fmt::println(
+            "Resized image {} from {}x{} to {}x{}",
+            image_index,
+            width,
+            height,
+            IMAGE_SIZE.x(),
+            IMAGE_SIZE.y()
         );
 
         return ImageRef{image_index};

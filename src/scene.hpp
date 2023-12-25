@@ -63,6 +63,7 @@ struct Node {
 
 struct Scene {
     std::vector<Node> nodes;
+    std::vector<ImageRef> images;
     std::vector<Mesh> meshes;
     glm::vec3 global_scale;
     RTCScene scene;
@@ -91,6 +92,7 @@ struct Scene {
 
     glm::mat4 node_global_matrix(const Node &node) const;
 
+    void load_images(App &app, const tinygltf::Model &gltf_model);
     void load_primitives(App &app, const tinygltf::Model &gltf_model);
 
     void load_node(
