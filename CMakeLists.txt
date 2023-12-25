@@ -25,8 +25,8 @@ target_link_libraries(tinygltf PRIVATE stb)
 set(
     SYCL_SOURCES
     src/main.cpp
-    src/render.cpp
     src/scene.cpp
+    src/render_megakernel.cpp
 )
 
 set(

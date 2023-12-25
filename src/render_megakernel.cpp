@@ -1,4 +1,4 @@
-#include "render.hpp"
+#include "render_megakernel.hpp"
 
 #include <iostream>
 #include <vector>
@@ -8,20 +8,21 @@
 
 #include "util.hpp"
 
+using namespace raytracer;
+
 using sycl::float2;
 using sycl::float3;
 using sycl::float4;
 using sycl::int2;
 using sycl::range;
 
-namespace raytracer {
 static float3 render_pixel(
     const RenderContext &ctx, XorShift32State &rng, int2 pixel_coords, uint32_t &ray_count
 ) {
     float3 attenuation = float3(1.0f);
     float3 radiance = float3(0.0f);
 
-    constexpr uint32_t max_bounces = 10;
+    constexpr uint32_t max_bounces = 50;
 
     RTCRayHit rayhit;
     rayhit.ray = ctx.camera.get_ray(pixel_coords, rng);
@@ -58,7 +59,7 @@ static float3 render_pixel(
 
         // Calculate UVs
         float2 vertex_uv = (1 - bary.x - bary.y) * vertex_uvs[0] +
-                              bary.x * vertex_uvs[1] + bary.y * vertex_uvs[2];
+                           bary.x * vertex_uvs[1] + bary.y * vertex_uvs[2];
 
         // Calculate normals
         glm::vec3 vertex_normal = glm::normalize(
@@ -96,12 +97,10 @@ static float3 render_pixel(
     return float3(0, 0, 0);
 }
 
-void render_frame(
-    App &app,
-    const Camera &camera,
-    const Scene &scene,
-    range<2> img_size,
-    sycl::image<2> &image
+MegakernelRenderer::MegakernelRenderer(App &app) : app(app) {}
+
+void MegakernelRenderer::render_frame(
+    const Camera &camera, const Scene &scene, range<2> img_size, sycl::image<2> &image
 ) {
     uint32_t initial_ray_count = 0;
     sycl::buffer<uint32_t> ray_count_buffer{&initial_ray_count, 1};
@@ -153,7 +152,7 @@ void render_frame(
                     std::hash<std::size_t>{}(id.get_global_linear_id());
                 auto rng = XorShift32State{(uint32_t)init_generator_state};
 
-                constexpr uint32_t sample_count = 256;
+                constexpr uint32_t sample_count = 64;
 
                 uint32_t ray_count = 0;
                 float3 pixel_color = float3(0, 0, 0);
@@ -181,11 +180,10 @@ void render_frame(
     double secs = elapsed.count() * 1e-9;
     double rays_per_sec = (double)ray_count[0] / secs;
 
-    printf("Time measured: %.6lf seconds\n", secs);
-    printf("Total rays: %u\n", ray_count[0]);
-    printf("Rays/sec: %.2lfM\n", rays_per_sec / 1000000.0);
+    fmt::println("Time measured: {:.6f} seconds", secs);
+    fmt::println("Total rays: {}", ray_count[0]);
+    fmt::println("Rays/sec: {:.2f}M", rays_per_sec / 1000000.0);
 
-    printf("Writing image to disk\n");
+    fmt::println("Writing image to disk");
     write_image(app.queue, image, img_size[0], img_size[1]);
 }
-} // namespace raytracer

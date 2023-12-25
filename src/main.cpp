@@ -1,6 +1,7 @@
 #include <fmt/core.h>
 
 #include "render.hpp"
+#include "render_megakernel.hpp"
 
 int main(int argc, char *argv[]) {
     try {
@@ -28,7 +29,10 @@ int main(int argc, char *argv[]) {
             scene.camera_focal_length
         );
 
-        raytracer::render_frame(app, camera, scene, img_size, image);
+        std::unique_ptr<raytracer::IRenderer> renderer(
+            new raytracer::MegakernelRenderer(app)
+        );
+        renderer->render_frame(camera, scene, img_size, image);
     } catch (sycl::exception const &e) {
         fmt::println("Caught SYCL exception: {}", e.what());
         std::terminate();
