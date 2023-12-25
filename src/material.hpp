@@ -93,6 +93,7 @@ struct MaterialDiffuse {
 struct MaterialMetallic {
     Texture albedo;
     float roughness;
+    sycl::float3 emissive;
 
     inline bool scatter(
         const RenderContext &ctx,
@@ -109,7 +110,7 @@ struct MaterialMetallic {
     }
 
     inline sycl::float3 emitted() const {
-        return sycl::float3(0, 0, 0);
+        return this->emissive;
     }
 };
 

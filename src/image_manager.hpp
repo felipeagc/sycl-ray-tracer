@@ -2,9 +2,10 @@
 
 #include <sycl/sycl.hpp>
 #include <fmt/core.h>
+#include <stb_image_resize2.h>
 
 #include "app.hpp"
-#include "stb_image_resize2.h"
+#include "util.hpp"
 
 namespace raytracer {
 
@@ -95,21 +96,16 @@ struct ImageManager {
     }
 
     sycl::image<3> bake_image(sycl::queue &q) {
-        uint8_t *img_data = sycl::malloc_device<uint8_t>(
-            IMAGE_SIZE.x() * IMAGE_SIZE.y() * IMAGE_CHANNELS * MAX_IMAGES, q
-        );
+        uint8_t *img_data =
+            new uint8_t[IMAGE_SIZE.x() * IMAGE_SIZE.y() * IMAGE_CHANNELS * MAX_IMAGES];
 
         for (uint32_t img_index = 0; img_index < this->images.size(); img_index++) {
-            q.submit([&](sycl::handler &cgh) {
-                cgh.memcpy(
-                    img_data +
-                        img_index * IMAGE_SIZE.x() * IMAGE_SIZE.y() * IMAGE_CHANNELS,
-                    this->images[img_index].data.data(),
-                    IMAGE_SIZE.x() * IMAGE_SIZE.y() * IMAGE_CHANNELS
-                );
-            });
+            std::memcpy(
+                img_data + img_index * IMAGE_SIZE.x() * IMAGE_SIZE.y() * IMAGE_CHANNELS,
+                this->images[img_index].data.data(),
+                IMAGE_SIZE.x() * IMAGE_SIZE.y() * IMAGE_CHANNELS
+            );
         }
-        q.wait();
 
         sycl::image<3> baked_image(
             img_data,
@@ -120,7 +116,7 @@ struct ImageManager {
 
         fmt::println("Baked {} images into array", this->images.size());
 
-        this->images.clear();
+        // this->images.clear();
 
         return baked_image;
     }

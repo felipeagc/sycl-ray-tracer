@@ -70,6 +70,8 @@ Scene::Scene(App &app, const std::string &filepath, glm::vec3 global_scale)
     }
 
     load_images(app, gltf_model);
+    this->image_array = this->image_baker.bake_image(app.queue);
+
     load_primitives(app, gltf_model);
 
     const tinygltf::Scene &scene =
@@ -124,8 +126,6 @@ Scene::Scene(App &app, const std::string &filepath, glm::vec3 global_scale)
 
         this->camera_focal_length = 1.0f / glm::tan(yfov / 2.0f);
     }
-
-    this->image_array = this->image_baker.bake_image(app.queue);
 }
 
 Scene::~Scene() {
@@ -146,12 +146,12 @@ glm::mat4 Scene::node_global_matrix(const Node &node) const {
 }
 
 void Scene::load_images(App &app, const tinygltf::Model &gltf_model) {
-    this->images.resize(gltf_model.meshes.size());
+    this->images.resize(gltf_model.images.size());
 
     for (size_t i = 0; i < gltf_model.images.size(); i++) {
         const tinygltf::Image &gltf_image = gltf_model.images[i];
 
-        assert(!gltf_image.as_is[0]);
+        assert(!gltf_image.as_is);
 
         this->images[i] = this->image_baker.upload_image(
             gltf_image.width, gltf_image.height, gltf_image.image.data()
@@ -170,6 +170,8 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
         for (size_t j = 0; j < gltf_mesh.primitives.size(); j++) {
             const tinygltf::Primitive &gltf_primitive = gltf_mesh.primitives[j];
             Primitive &primitive = mesh.primitives[j];
+
+            assert(gltf_primitive.material > -1);
 
             const tinygltf::Material &gltf_material =
                 gltf_model.materials[gltf_primitive.material];
@@ -191,6 +193,16 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             sycl::float3 emissive =
                 sycl::float3(emissive_vec[0], emissive_vec[1], emissive_vec[2]);
 
+            float emissive_strength = 0.0f;
+            if (auto emissive_strength_ext =
+                    gltf_material.extensions.find("KHR_materials_emissive_strength");
+                emissive_strength_ext != gltf_material.extensions.end()) {
+                emissive_strength =
+                    (float)emissive_strength_ext->second.Get("emissiveStrength")
+                        .GetNumberAsDouble();
+            }
+            emissive = emissive * emissive_strength;
+
             if (auto ior_ext = gltf_material.extensions.find("KHR_materials_ior");
                 ior_ext != gltf_material.extensions.end()) {
                 float ior = (float)ior_ext->second.Get("ior").GetNumberAsDouble();
@@ -201,30 +213,31 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             } else if (pbr.metallicFactor > 0.01f) {
                 Texture texture = Texture(base_color);
                 if (gltf_material.pbrMetallicRoughness.baseColorTexture.index > -1) {
-                    texture = Texture(this->images[gltf_material.pbrMetallicRoughness
-                                               .baseColorTexture.index]);
+                    uint32_t texture_index =
+                        gltf_material.pbrMetallicRoughness.baseColorTexture.index;
+                    uint32_t image_index = gltf_model.textures[texture_index].source;
+
+                    texture = Texture(this->images[image_index]);
                 }
 
                 primitive.material = MaterialMetallic{
                     .albedo = texture,
                     .roughness = (float)pbr.roughnessFactor,
+                    .emissive = emissive,
                 };
-                fmt::println("Metallic: roughness={}", (float)pbr.roughnessFactor);
+                fmt::println(
+                    "Metallic: roughness={}, emissive={}",
+                    (float)pbr.roughnessFactor,
+                    emissive
+                );
             } else {
-                float emissive_strength = 0.0f;
-                if (auto emissive_strength_ext =
-                        gltf_material.extensions.find("KHR_materials_emissive_strength");
-                    emissive_strength_ext != gltf_material.extensions.end()) {
-                    emissive_strength =
-                        (float)emissive_strength_ext->second.Get("emissiveStrength")
-                            .GetNumberAsDouble();
-                }
-                emissive = emissive * emissive_strength;
-
                 Texture texture = Texture(base_color);
                 if (gltf_material.pbrMetallicRoughness.baseColorTexture.index > -1) {
-                    texture = Texture(this->images[gltf_material.pbrMetallicRoughness
-                                               .baseColorTexture.index]);
+                    uint32_t texture_index =
+                        gltf_material.pbrMetallicRoughness.baseColorTexture.index;
+                    uint32_t image_index = gltf_model.textures[texture_index].source;
+
+                    texture = Texture(this->images[image_index]);
                 }
 
                 primitive.material = MaterialDiffuse{
@@ -241,6 +254,18 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             // Position attribute is required
             assert(
                 gltf_primitive.attributes.find("POSITION") !=
+                gltf_primitive.attributes.end()
+            );
+
+            // Normal attribute is required
+            assert(
+                gltf_primitive.attributes.find("NORMAL") !=
+                gltf_primitive.attributes.end()
+            );
+
+            // UV attribute is required
+            assert(
+                gltf_primitive.attributes.find("TEXCOORD_0") !=
                 gltf_primitive.attributes.end()
             );
 
@@ -312,7 +337,6 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 uv_accessor.ByteStride(uv_view)
                     ? (uv_accessor.ByteStride(uv_view) / sizeof(float))
                     : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC2);
-
 
             primitive.uvs = alignedSYCLMallocDeviceReadOnly<sycl::float2>(
                 app.queue, primitive.vertex_count, 16
@@ -387,7 +411,7 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 primitive.vertex_count
             );
 
-            assert(prim.index_count % 3 == 0);
+            assert(primitive.index_count % 3 == 0);
             uint32_t triangle_count = primitive.index_count / 3;
             rtcSetSharedGeometryBuffer(
                 geom,

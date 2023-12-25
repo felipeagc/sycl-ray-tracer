@@ -153,7 +153,7 @@ void render_frame(
                     std::hash<std::size_t>{}(id.get_global_linear_id());
                 auto rng = XorShift32State{(uint32_t)init_generator_state};
 
-                constexpr uint32_t sample_count = 128;
+                constexpr uint32_t sample_count = 256;
 
                 uint32_t ray_count = 0;
                 float3 pixel_color = float3(0, 0, 0);

@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(EMBREE_SYCL_SUPPORT ON)
 set(FMT_MODULE OFF)
 
+# add_compile_options(-fsanitize=address)
+# add_link_options(-fsanitize=address)
+
 find_package(IntelSYCL REQUIRED)
 find_package(embree 4 REQUIRED)
 
