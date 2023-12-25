@@ -8,7 +8,7 @@ struct MegakernelRenderer : public IRenderer {
 
     MegakernelRenderer(App &app);
 
-    void render_frame(
+    virtual void render_frame(
         const Camera &camera,
         const Scene &scene,
         sycl::range<2> img_size,

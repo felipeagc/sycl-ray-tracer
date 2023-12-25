@@ -15,5 +15,7 @@ struct IRenderer {
         sycl::range<2> img_size,
         sycl::image<2> &image
     ) = 0;
+
+    virtual ~IRenderer() {};
 };
 } // namespace raytracer
