@@ -270,6 +270,31 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                     glm::make_vec3(&buffer_normal[v * normal_byte_stride]);
             }
 
+            // UV buffer
+
+            const tinygltf::Accessor &uv_accessor =
+                gltf_model
+                    .accessors[gltf_primitive.attributes.find("TEXCOORD_0")->second];
+            const tinygltf::BufferView &uv_view =
+                gltf_model.bufferViews[uv_accessor.bufferView];
+            const float *buffer_uv = reinterpret_cast<const float *>(
+                &(gltf_model.buffers[uv_view.buffer]
+                      .data[uv_accessor.byteOffset + uv_view.byteOffset])
+            );
+
+            uint32_t uv_byte_stride =
+                uv_accessor.ByteStride(uv_view)
+                    ? (uv_accessor.ByteStride(uv_view) / sizeof(float))
+                    : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC2);
+
+            primitive.uvs = alignedSYCLMallocDeviceReadOnly<sycl::float2>(
+                app.queue, primitive.vertex_count, 16
+            );
+
+            for (size_t v = 0; v < primitive.vertex_count; v++) {
+                primitive.uvs[v] = *((sycl::float2 *)&buffer_uv[v * uv_byte_stride]);
+            }
+
             // Index buffer
             const tinygltf::Accessor &indices_accessor =
                 gltf_model
@@ -330,17 +355,6 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 0,
                 RTC_FORMAT_FLOAT3,
                 primitive.positions,
-                0,
-                sizeof(glm::vec3),
-                primitive.vertex_count
-            );
-
-            rtcSetSharedGeometryBuffer(
-                geom,
-                RTC_BUFFER_TYPE_NORMAL,
-                0,
-                RTC_FORMAT_FLOAT3,
-                primitive.normals,
                 0,
                 sizeof(glm::vec3),
                 primitive.vertex_count
@@ -426,6 +440,7 @@ void Scene::load_node(
             *user_data = GeometryData{
                 .vertex_buffer = prim.positions,
                 .normal_buffer = prim.normals,
+                .uv_buffer = prim.uvs,
                 .index_buffer = prim.indices,
                 .obj_to_world = glm::transpose(glm::inverse(glm::mat3(global_transform))),
                 .material = prim.material,

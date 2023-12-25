@@ -4,9 +4,9 @@ TODO:
 - [x] Load vertex normal attributes
 - [x] Use hit (u, v) to interpolate normals (to get smooth normals)
 - [x] Light emittance
-- [ ] Load texture UVs
+- [x] Load texture UVs
 - [ ] Load textures
-- [ ] Sample texture colors
+- [x] Sample texture colors
 
 ## Wavefront raytracing
 

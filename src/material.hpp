@@ -59,13 +59,14 @@ struct MaterialDiffuse {
         XorShift32State &rng,
         const sycl::float3 &dir,
         const sycl::float3 &normal,
+        const sycl::float2 &uv,
         ScatterResult &result
     ) const {
         result.dir = normal + rng.random_unit_vector();
         if (near_zero(dir)) {
             result.dir = normal;
         }
-        result.attenuation = this->albedo.sample(ctx, sycl::float2(0.0f, 0.0f));
+        result.attenuation = this->albedo.sample(ctx, uv);
         return true;
     }
 
@@ -83,6 +84,7 @@ struct MaterialMetallic {
         XorShift32State &rng,
         const sycl::float3 &dir,
         const sycl::float3 &normal,
+        const sycl::float2 &uv,
         ScatterResult &result
     ) const {
         sycl::float3 reflected = reflect(dir, normal);
@@ -111,6 +113,7 @@ struct MaterialDielectric {
         XorShift32State &rng,
         const sycl::float3 &dir,
         const sycl::float3 &outward_normal,
+        const sycl::float2 &uv,
         ScatterResult &result
     ) const {
         result.attenuation = sycl::float3(1, 1, 1);
@@ -194,15 +197,16 @@ struct Material {
         XorShift32State &rng,
         const sycl::float3 &dir,
         const sycl::float3 &normal,
+        const sycl::float2 &uv,
         ScatterResult &result
     ) const {
         switch (this->type) {
         case MaterialType::eDiffuse:
-            return this->diffuse.scatter(ctx, rng, dir, normal, result);
+            return this->diffuse.scatter(ctx, rng, dir, normal, uv, result);
         case MaterialType::eMetallic:
-            return this->metallic.scatter(ctx, rng, dir, normal, result);
+            return this->metallic.scatter(ctx, rng, dir, normal, uv, result);
         case MaterialType::eDielectric:
-            return this->dielectric.scatter(ctx, rng, dir, normal, result);
+            return this->dielectric.scatter(ctx, rng, dir, normal, uv, result);
         case MaterialType::eNone: return false;
         }
     }

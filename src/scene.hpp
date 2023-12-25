@@ -17,6 +17,7 @@ namespace raytracer {
 struct GeometryData {
     glm::vec3 *vertex_buffer;
     glm::vec3 *normal_buffer;
+    sycl::float2 *uv_buffer;
     uint32_t *index_buffer;
     glm::mat3 obj_to_world;
     Material material;
@@ -25,6 +26,7 @@ struct GeometryData {
 struct Primitive {
     glm::vec3 *positions;
     glm::vec3 *normals;
+    sycl::float2 *uvs;
     size_t vertex_count;
     uint32_t *indices;
     uint32_t index_count;

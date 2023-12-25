@@ -16,10 +16,7 @@ using sycl::range;
 
 namespace raytracer {
 static float3 render_pixel(
-    const RenderContext &ctx,
-    XorShift32State &rng,
-    int2 pixel_coords,
-    uint32_t &ray_count
+    const RenderContext &ctx, XorShift32State &rng, int2 pixel_coords, uint32_t &ray_count
 ) {
     float3 attenuation = float3(1.0f);
     float3 radiance = float3(0.0f);
@@ -53,6 +50,16 @@ static float3 render_pixel(
             user_data->normal_buffer[prim_indices[2]],
         };
 
+        std::array<float2, 3> vertex_uvs = {
+            user_data->uv_buffer[prim_indices[0]],
+            user_data->uv_buffer[prim_indices[1]],
+            user_data->uv_buffer[prim_indices[2]],
+        };
+
+        // Calculate UVs
+        float2 vertex_uv = (1 - bary.x - bary.y) * vertex_uvs[0] +
+                              bary.x * vertex_uvs[1] + bary.y * vertex_uvs[2];
+
         // Calculate normals
         glm::vec3 vertex_normal = glm::normalize(
             (1 - bary.x - bary.y) * vertex_normals[0] + bary.x * vertex_normals[1] +
@@ -68,7 +75,7 @@ static float3 render_pixel(
         radiance += user_data->material.emitted();
 
         ScatterResult result;
-        if (user_data->material.scatter(ctx, rng, dir, normal, result)) {
+        if (user_data->material.scatter(ctx, rng, dir, normal, vertex_uv, result)) {
             rayhit.ray.org_x = rayhit.ray.org_x + rayhit.ray.dir_x * rayhit.ray.tfar;
             rayhit.ray.org_z = rayhit.ray.org_z + rayhit.ray.dir_z * rayhit.ray.tfar;
             rayhit.ray.org_y = rayhit.ray.org_y + rayhit.ray.dir_y * rayhit.ray.tfar;
