@@ -3,6 +3,7 @@
 #include "app.hpp"
 #include "scene.hpp"
 #include "camera.hpp"
+#include "image_manager.hpp"
 
 #include <vector>
 

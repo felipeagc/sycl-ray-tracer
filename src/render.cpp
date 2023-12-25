@@ -15,19 +15,11 @@ using sycl::int2;
 using sycl::range;
 
 namespace raytracer {
-
-struct RenderContext {
-    Camera camera;
-    sycl::float3 sky_color;
-    RTCScene scene;
-};
-
 static float3 render_pixel(
     const RenderContext &ctx,
     XorShift32State &rng,
     int2 pixel_coords,
-    uint32_t &ray_count,
-    sycl::stream os
+    uint32_t &ray_count
 ) {
     float3 attenuation = float3(1.0f);
     float3 radiance = float3(0.0f);
@@ -76,7 +68,7 @@ static float3 render_pixel(
         radiance += user_data->material.emitted();
 
         ScatterResult result;
-        if (user_data->material.scatter(rng, dir, normal, result)) {
+        if (user_data->material.scatter(ctx, rng, dir, normal, result)) {
             rayhit.ray.org_x = rayhit.ray.org_x + rayhit.ray.dir_x * rayhit.ray.tfar;
             rayhit.ray.org_z = rayhit.ray.org_z + rayhit.ray.dir_z * rayhit.ray.tfar;
             rayhit.ray.org_y = rayhit.ray.org_y + rayhit.ray.dir_y * rayhit.ray.tfar;
@@ -124,6 +116,13 @@ void render_frame(
             .camera = camera,
             .sky_color = scene.sky_color,
             .scene = scene.scene,
+            .sampler = sycl::sampler(
+                sycl::coordinate_normalization_mode::normalized,
+                sycl::addressing_mode::repeat,
+                sycl::filtering_mode::nearest
+            ),
+            .image_reader = ImageReadAccessor(scene.image_array.value(), cgh),
+            .os = os,
         };
 
         cgh.parallel_for(
@@ -147,12 +146,12 @@ void render_frame(
                     std::hash<std::size_t>{}(id.get_global_linear_id());
                 auto rng = XorShift32State{(uint32_t)init_generator_state};
 
-                constexpr uint32_t sample_count = 512;
+                constexpr uint32_t sample_count = 128;
 
                 uint32_t ray_count = 0;
                 float3 pixel_color = float3(0, 0, 0);
                 for (uint32_t i = 0; i < sample_count; ++i) {
-                    pixel_color += render_pixel(ctx, rng, pixel_coords, ray_count, os);
+                    pixel_color += render_pixel(ctx, rng, pixel_coords, ray_count);
                 }
                 pixel_color /= (float)sample_count;
 

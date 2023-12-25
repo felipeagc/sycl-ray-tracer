@@ -19,7 +19,7 @@ struct GeometryData {
     glm::vec3 *normal_buffer;
     uint32_t *index_buffer;
     glm::mat3 obj_to_world;
-    Material material = MaterialDiffuse{};
+    Material material;
 };
 
 struct Primitive {
@@ -31,7 +31,7 @@ struct Primitive {
 
     RTCScene scene;
 
-    Material material = MaterialDiffuse{};
+    Material material;
 };
 
 struct Mesh {
@@ -72,11 +72,14 @@ struct Scene {
 
     sycl::float3 sky_color = {0.5f, 0.7f, 1.0f};
 
+    mutable ImageManager image_baker = {};
+    mutable std::optional<sycl::image<3>> image_array;
+
     Scene(const Scene &) = delete;
     Scene &operator=(const Scene &) = delete;
 
-    Scene(Scene &&other);
-    Scene &operator=(Scene &&other);
+    Scene(Scene &&other) = delete;
+    Scene &operator=(Scene &&other) = delete;
 
     Scene(
         App &app, const std::string &filepath, glm::vec3 global_scale = {1.0f, 1.0f, 1.0f}

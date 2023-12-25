@@ -28,26 +28,28 @@ Node::~Node() {
     }
 }
 
-Scene::Scene(Scene &&other) {
-    this->scene = other.scene;
-    other.scene = nullptr;
+// Scene::Scene(Scene &&other) {
+//     this->scene = other.scene;
+//     other.scene = nullptr;
 
-    this->global_scale = other.global_scale;
+//     this->global_scale = other.global_scale;
 
-    this->nodes = std::move(other.nodes);
-    this->meshes = std::move(other.meshes);
-}
+//     this->nodes = std::move(other.nodes);
+//     this->meshes = std::move(other.meshes);
+// }
 
-Scene &Scene::operator=(Scene &&other) {
-    this->scene = other.scene;
-    other.scene = nullptr;
+// Scene &Scene::operator=(Scene &&other) {
+//     this->scene = other.scene;
+//     other.scene = nullptr;
 
-    this->global_scale = other.global_scale;
+//     this->global_scale = other.global_scale;
 
-    this->nodes = std::move(other.nodes);
-    this->meshes = std::move(other.meshes);
-    return *this;
-}
+//     this->nodes = std::move(other.nodes);
+//     this->meshes = std::move(other.meshes);
+//     this->image_manager = std::move(other.image_manager);
+
+//     return *this;
+// }
 
 Scene::Scene(App &app, const std::string &filepath, glm::vec3 global_scale)
     : global_scale(global_scale) {
@@ -80,6 +82,12 @@ Scene::Scene(App &app, const std::string &filepath, glm::vec3 global_scale)
             (float)sky_color.Get(2).GetNumberAsDouble()
         );
         fmt::println("Sky color: {}", this->sky_color);
+    }
+
+    if (auto sky_strength = scene.extras.Get("sky_strength"); sky_strength.IsNumber()) {
+        float sky_strength_float = (float)sky_strength.GetNumberAsDouble();
+        this->sky_color *= sky_strength_float;
+        fmt::println("Sky strength: {}", sky_strength_float);
     }
 
     this->nodes.resize(gltf_model.nodes.size());
@@ -115,6 +123,8 @@ Scene::Scene(App &app, const std::string &filepath, glm::vec3 global_scale)
 
         this->camera_focal_length = 1.0f / glm::tan(yfov / 2.0f);
     }
+
+    this->image_array = this->image_baker.bake_image(app.queue);
 }
 
 Scene::~Scene() {
@@ -169,15 +179,15 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             if (auto ior_ext = gltf_material.extensions.find("KHR_materials_ior");
                 ior_ext != gltf_material.extensions.end()) {
                 float ior = (float)ior_ext->second.Get("ior").GetNumberAsDouble();
-                primitive.material = Material(MaterialDielectric{
+                primitive.material = MaterialDielectric{
                     .ior = ior,
-                });
+                };
                 fmt::println("Dielectric: ior={}", ior);
             } else if (pbr.metallicFactor > 0.01f) {
-                primitive.material = Material(MaterialMetallic{
+                primitive.material = MaterialMetallic{
                     .albedo = base_color,
                     .roughness = (float)pbr.roughnessFactor,
-                });
+                };
                 fmt::println("Metallic: roughness={}", (float)pbr.roughnessFactor);
             } else {
                 float emissive_strength = 0.0f;
@@ -190,10 +200,11 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
                 }
                 emissive = emissive * emissive_strength;
 
-                primitive.material = Material(MaterialDiffuse{
-                    .albedo = base_color,
+                // TODO: load image here
+                primitive.material = MaterialDiffuse{
+                    .albedo = Texture(base_color),
                     .emissive = emissive,
-                });
+                };
                 fmt::println("Diffuse: albedo={}, emissive={}", base_color, emissive);
             }
 

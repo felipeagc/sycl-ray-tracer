@@ -1,11 +1,42 @@
 #pragma once
 
+#include <sycl/sycl.hpp>
 #include <embree4/rtcore.h>
 
+#include "image_manager.hpp"
 #include "xorshift.hpp"
 #include "util.hpp"
+#include "render_context.hpp"
 
 namespace raytracer {
+
+enum class TextureType : uint8_t {
+    eColor,
+    eImage,
+};
+
+struct Texture {
+    TextureType type;
+    union {
+        sycl::float3 color;
+        ImageRef image_ref;
+    };
+
+    Texture(sycl::float3 color) : type(TextureType::eColor), color(color) {}
+
+    Texture(ImageRef image_ref) : type(TextureType::eImage), image_ref(image_ref) {}
+
+    inline sycl::float3 sample(const RenderContext &ctx, sycl::float2 uv) const {
+        switch (this->type) {
+        case TextureType::eColor: return this->color;
+        case TextureType::eImage:
+            sycl::float4 color = ctx.image_reader[this->image_ref.index].read(
+                sycl::float2(0.0f, 0.0f), ctx.sampler
+            );
+            return sycl::float3(color.x(), color.y(), color.z());
+        }
+    }
+};
 
 struct ScatterResult {
     sycl::float3 dir;
@@ -13,16 +44,18 @@ struct ScatterResult {
 };
 
 enum class MaterialType : uint8_t {
+    eNone,
     eDiffuse,
     eMetallic,
     eDielectric,
 };
 
 struct MaterialDiffuse {
-    sycl::float3 albedo;
+    Texture albedo;
     sycl::float3 emissive;
 
     inline bool scatter(
+        const RenderContext &ctx,
         XorShift32State &rng,
         const sycl::float3 &dir,
         const sycl::float3 &normal,
@@ -32,7 +65,7 @@ struct MaterialDiffuse {
         if (near_zero(dir)) {
             result.dir = normal;
         }
-        result.attenuation = this->albedo;
+        result.attenuation = this->albedo.sample(ctx, sycl::float2(0.0f, 0.0f));
         return true;
     }
 
@@ -46,6 +79,7 @@ struct MaterialMetallic {
     float roughness;
 
     inline bool scatter(
+        const RenderContext &ctx,
         XorShift32State &rng,
         const sycl::float3 &dir,
         const sycl::float3 &normal,
@@ -73,6 +107,7 @@ struct MaterialDielectric {
     }
 
     inline bool scatter(
+        const RenderContext &ctx,
         XorShift32State &rng,
         const sycl::float3 &dir,
         const sycl::float3 &outward_normal,
@@ -107,16 +142,12 @@ struct MaterialDielectric {
 };
 
 struct Material {
-    MaterialType type;
+    MaterialType type = MaterialType::eNone;
     union {
         MaterialDiffuse diffuse;
         MaterialMetallic metallic;
         MaterialDielectric dielectric;
     };
-
-    Material() {
-        *this = Material(MaterialDiffuse{.albedo = sycl::float3(1, 1, 1)});
-    }
 
     Material(const Material &other) {
         this->type = other.type;
@@ -124,6 +155,7 @@ struct Material {
         case MaterialType::eDiffuse: this->diffuse = other.diffuse; break;
         case MaterialType::eMetallic: this->metallic = other.metallic; break;
         case MaterialType::eDielectric: this->dielectric = other.dielectric; break;
+        case MaterialType::eNone: break;
         }
     }
 
@@ -133,8 +165,13 @@ struct Material {
         case MaterialType::eDiffuse: this->diffuse = other.diffuse; break;
         case MaterialType::eMetallic: this->metallic = other.metallic; break;
         case MaterialType::eDielectric: this->dielectric = other.dielectric; break;
+        case MaterialType::eNone: break;
         }
         return *this;
+    }
+
+    Material() {
+        type = MaterialType::eNone;
     }
 
     Material(MaterialDiffuse diffuse) {
@@ -153,6 +190,7 @@ struct Material {
     }
 
     inline bool scatter(
+        const RenderContext &ctx,
         XorShift32State &rng,
         const sycl::float3 &dir,
         const sycl::float3 &normal,
@@ -160,22 +198,21 @@ struct Material {
     ) const {
         switch (this->type) {
         case MaterialType::eDiffuse:
-            return this->diffuse.scatter(rng, dir, normal, result);
+            return this->diffuse.scatter(ctx, rng, dir, normal, result);
         case MaterialType::eMetallic:
-            return this->metallic.scatter(rng, dir, normal, result);
+            return this->metallic.scatter(ctx, rng, dir, normal, result);
         case MaterialType::eDielectric:
-            return this->dielectric.scatter(rng, dir, normal, result);
+            return this->dielectric.scatter(ctx, rng, dir, normal, result);
+        case MaterialType::eNone: return false;
         }
     }
 
     inline sycl::float3 emitted() const {
         switch (this->type) {
-        case MaterialType::eDiffuse:
-            return this->diffuse.emitted();
-        case MaterialType::eMetallic:
-            return this->metallic.emitted();
-        case MaterialType::eDielectric:
-            return this->dielectric.emitted();
+        case MaterialType::eDiffuse: return this->diffuse.emitted();
+        case MaterialType::eMetallic: return this->metallic.emitted();
+        case MaterialType::eDielectric: return this->dielectric.emitted();
+        case MaterialType::eNone: return sycl::float3(0.0f);
         }
     }
 };
