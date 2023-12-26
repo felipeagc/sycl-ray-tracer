@@ -5,14 +5,11 @@
 namespace raytracer {
 struct MegakernelRenderer : public IRenderer {
     App &app;
+    sycl::range<2> img_size;
+    sycl::image<2> &image;
 
-    MegakernelRenderer(App &app);
+    MegakernelRenderer(App &app, sycl::range<2> img_size, sycl::image<2> &image);
 
-    virtual void render_frame(
-        const Camera &camera,
-        const Scene &scene,
-        sycl::range<2> img_size,
-        sycl::image<2> &image
-    ) override;
+    virtual void render_frame(const Camera &camera, const Scene &scene) override;
 };
 } // namespace raytracer

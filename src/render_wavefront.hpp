@@ -5,14 +5,21 @@
 namespace raytracer {
 struct WavefrontRenderer : public IRenderer {
     App &app;
+    sycl::range<2> img_size;
+    sycl::image<2> &image;
 
-    WavefrontRenderer(App &app);
+    sycl::buffer<uint32_t> total_ray_count_buffer;
 
-    virtual void render_frame(
-        const Camera &camera,
-        const Scene &scene,
-        sycl::range<2> img_size,
-        sycl::image<2> &image
-    ) override;
+    sycl::buffer<uint32_t> ray_buffer_length;
+    RTCRay *ray_buffer;
+
+    WavefrontRenderer(App &app, sycl::range<2> img_size, sycl::image<2> &image);
+
+    virtual void render_frame(const Camera &camera, const Scene &scene) override;
+
+  private:
+    void generate_camera_rays(const Camera &camera);
+    void shoot_rays(const Camera &camera, const Scene &scene);
+    void convert_image_to_srgb();
 };
 } // namespace raytracer

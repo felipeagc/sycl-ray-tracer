@@ -15,9 +15,7 @@ constexpr uint32_t SAMPLE_COUNT = 256;
 struct IRenderer {
     virtual void render_frame(
         const Camera &camera,
-        const Scene &scene,
-        sycl::range<2> img_size,
-        sycl::image<2> &image
+        const Scene &scene
     ) = 0;
 
     virtual ~IRenderer() {};

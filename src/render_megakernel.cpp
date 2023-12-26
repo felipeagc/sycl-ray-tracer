@@ -36,11 +36,12 @@ static float3 render_pixel(
     return float3(0, 0, 0);
 }
 
-MegakernelRenderer::MegakernelRenderer(App &app) : app(app) {}
+MegakernelRenderer::MegakernelRenderer(
+    App &app, sycl::range<2> img_size, sycl::image<2> &image
+)
+    : app(app), img_size(img_size), image(image) {}
 
-void MegakernelRenderer::render_frame(
-    const Camera &camera, const Scene &scene, range<2> img_size, sycl::image<2> &image
-) {
+void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) {
     uint32_t initial_ray_count = 0;
     sycl::buffer<uint32_t> ray_count_buffer{&initial_ray_count, 1};
 
@@ -69,6 +70,8 @@ void MegakernelRenderer::render_frame(
             .image_reader = ImageReadAccessor(scene.image_array.value(), cgh),
             .os = os,
         };
+
+        const auto img_size = this->img_size;
 
         cgh.parallel_for(
             sycl::nd_range<2>(n_groups * local_size, local_size),

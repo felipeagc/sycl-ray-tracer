@@ -34,14 +34,14 @@ int main(int argc, char *argv[]) {
 
         std::unique_ptr<raytracer::IRenderer> renderer;
         if (renderer_name == "megakernel") {
-            renderer.reset(new raytracer::MegakernelRenderer(app));
+            renderer.reset(new raytracer::MegakernelRenderer(app, img_size, image));
         } else if (renderer_name == "wavefront") {
-            renderer.reset(new raytracer::WavefrontRenderer(app));
+            renderer.reset(new raytracer::WavefrontRenderer(app, img_size, image));
         } else {
             throw std::runtime_error("Unknown renderer");
         }
 
-        renderer->render_frame(camera, scene, img_size, image);
+        renderer->render_frame(camera, scene);
     } catch (sycl::exception const &e) {
         fmt::println("Caught SYCL exception: {}", e.what());
         std::terminate();
