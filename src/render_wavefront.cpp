@@ -134,13 +134,6 @@ void WavefrontRenderer::shoot_rays(
 
                 RayData ray_data = prev_ray_buffer[global_id];
 
-                // if (ray_data.ray.id == 2027967 || ray_data.ray.id == 1526875) {
-                //     ctx.os << "Ray " << ray_data.ray.id << " at index " << global_id[0]
-                //            << " direction: " << ray_data.ray.dir_x << ", "
-                //            << ray_data.ray.dir_y << ", " << ray_data.ray.dir_z
-                //            << sycl::endl;
-                // }
-
                 auto res = trace_ray(
                     ctx,
                     ray_data.rng,
@@ -155,8 +148,16 @@ void WavefrontRenderer::shoot_rays(
 
                 if (res) {
                     // Final value is computed. Write to image.
-                    sycl::float3 final_color = *res;
-                    image_writer.write(pixel_coords, float4(final_color, 1.0f));
+                    float4 final_color = float4(sycl::clamp(*res, 0.0f, 1.0f), 1.0f);
+
+                    float4 prev_value = image_reader.read(pixel_coords);
+                    // float4 final_value =
+                    //     sycl::mix(prev_value, final_color, 1.0f / ((float)depth + 1.0f));
+
+                    float4 final_value = prev_value + final_color;
+
+                    image_writer.write(pixel_coords, prev_value + final_value);
+
                     return;
                 }
 
@@ -176,6 +177,8 @@ void WavefrontRenderer::shoot_rays(
 void WavefrontRenderer::convert_image_to_srgb() {
     app.queue
         .submit([&](sycl::handler &cgh) {
+            sycl::stream os(8192, 256, cgh);
+
             auto image_reader =
                 this->image.get_access<float4, sycl::access::mode::read>(cgh);
             auto output_image_writer =
@@ -200,6 +203,7 @@ void WavefrontRenderer::convert_image_to_srgb() {
                     int2 pixel_coords = {global_id[0], global_id[1]};
 
                     float4 img_val = image_reader.read(pixel_coords);
+
                     img_val = linear_to_gamma(
                         float4(img_val.x(), img_val.y(), img_val.z(), 1.0f)
                     );
