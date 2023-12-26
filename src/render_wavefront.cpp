@@ -14,15 +14,26 @@ WavefrontRenderer::WavefrontRenderer(
     App &app, sycl::range<2> img_size, sycl::image<2> &output_image
 )
     : app(app), img_size(img_size),
+      image(sycl::image_channel_order::rgba, sycl::image_channel_type::fp32, img_size),
       buffers({Buffers(app, img_size), Buffers(app, img_size)}),
-      output_image(output_image) {}
+      output_image(output_image) {
+    app.queue
+        .submit([&](sycl::handler &cgh) {
+            auto image_writer =
+                this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
+            cgh.parallel_for(sycl::range<2>(img_size), [=](sycl::item<2> item) {
+                image_writer.write(sycl::int2(item[0], item[1]), sycl::float4(0.0f));
+            });
+        })
+        .wait();
+}
 
 void WavefrontRenderer::generate_camera_rays(const Camera &camera) {
     app.queue
         .submit([&](sycl::handler &cgh) {
-            auto produced_rays_acc =
-                this->current_buffer()
-                    .ray_buffer_length.get_access<sycl::access_mode::read_write>(cgh);
+            // auto produced_rays_acc =
+            //     this->current_buffer()
+            //         .ray_buffer_length.get_access<sycl::access_mode::read_write>(cgh);
 
             range<2> local_size{8, 8};
             range<2> n_groups = {
@@ -40,26 +51,28 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera) {
                     return;
                 }
 
-                sycl::atomic_ref<
-                    uint32_t,
-                    sycl::memory_order_relaxed,
-                    sycl::memory_scope_device,
-                    sycl::access::address_space::global_space>
-                    produced_rays_ref(produced_rays_acc[0]);
+                // sycl::atomic_ref<
+                //     uint32_t,
+                //     sycl::memory_order_relaxed,
+                //     sycl::memory_scope_device,
+                //     sycl::access::address_space::global_space>
+                //     produced_rays_ref(produced_rays_acc[0]);
 
                 int2 pixel_coords = {global_id[0], global_id[1]};
 
-                XorShift32State rng = {0};
+                auto init_generator_state =
+                    std::hash<std::size_t>{}(id.get_global_linear_id());
+                auto rng = XorShift32State{(uint32_t)init_generator_state};
                 RTCRay ray = camera.get_ray(pixel_coords, rng);
 
-                uint32_t ray_index = produced_rays_ref.fetch_add(1);
+                // uint32_t ray_index = produced_rays_ref.fetch_add(1);
                 RayData ray_data = {
                     .ray = ray,
                     .attenuation = float3(1.0f),
                     .radiance = float3(0.0f),
                     .rng = rng,
                 };
-                ray_buffer[ray_index] = ray_data;
+                ray_buffer[ray_data.ray.id] = ray_data;
             });
         })
         .wait();
@@ -68,9 +81,11 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera) {
 void WavefrontRenderer::shoot_rays(
     const Camera &camera, const Scene &scene, uint32_t depth
 ) {
-    uint32_t prev_ray_count = this->prev_buffer().ray_buffer_length.get_host_access()[0];
+    // uint32_t prev_ray_count =
+    // this->prev_buffer().ray_buffer_length.get_host_access()[0];
+    uint32_t prev_ray_count = img_size[0] * img_size[1];
     fmt::println("Shooting {} rays", prev_ray_count);
-    this->prev_buffer().ray_buffer_length.get_host_access()[0] = 0;
+    // this->prev_buffer().ray_buffer_length.get_host_access()[0] = 0;
 
     app.queue
         .submit([&](sycl::handler &cgh) {
@@ -82,15 +97,13 @@ void WavefrontRenderer::shoot_rays(
             range<1> n_groups = ((prev_ray_count + local_size - 1) / local_size);
             sycl::nd_range<1> for_range(n_groups * local_size, local_size);
 
-            auto produced_rays_acc =
-                this->current_buffer()
-                    .ray_buffer_length.get_access<sycl::access_mode::read_write>(cgh);
+            // authis->to produced_rays_acc =
+            //     this->current_buffer()
+            //         .ray_buffer_length.get_access<sycl::access_mode::read_write>(cgh);
             auto image_reader =
-                this->prev_buffer().image.get_access<float4, sycl::access::mode::read>(cgh
-                );
+                this->image.get_access<float4, sycl::access::mode::read>(cgh);
             auto image_writer =
-                this->current_buffer()
-                    .image.get_access<float4, sycl::access::mode::write>(cgh);
+                this->image.get_access<float4, sycl::access::mode::write>(cgh);
 
             RenderContext ctx = {
                 .camera = camera,
@@ -114,12 +127,12 @@ void WavefrontRenderer::shoot_rays(
                     return;
                 }
 
-                sycl::atomic_ref<
-                    uint32_t,
-                    sycl::memory_order_relaxed,
-                    sycl::memory_scope_device,
-                    sycl::access::address_space::global_space>
-                    produced_rays_acc_ref(produced_rays_acc[0]);
+                // sycl::atomic_ref<
+                //     uint32_t,
+                //     sycl::memory_order_relaxed,
+                //     sycl::memory_scope_device,
+                //     sycl::access::address_space::global_space>
+                //     produced_rays_acc_ref(produced_rays_acc[0]);
 
                 RayData ray_data = prev_ray_buffer[global_id];
 
@@ -145,21 +158,18 @@ void WavefrontRenderer::shoot_rays(
                 if (res) {
                     // Final value is computed. Write to image.
                     sycl::float3 final_color = *res;
-
-                    float4 img_val = image_reader.read(pixel_coords);
-                    image_writer.write(pixel_coords, img_val + float4(final_color, 1.0f));
+                    image_writer.write(pixel_coords, float4(final_color, 1.0f));
                     return;
                 }
 
                 if (depth == (MAX_DEPTH - 1)) {
-                    float4 img_val = image_reader.read(pixel_coords);
-                    image_writer.write(pixel_coords, float4(1.0f, 0.0f, 0.0f, 1.0f));
+                    image_writer.write(pixel_coords, float4(0.0f, 0.0f, 0.0f, 1.0f));
                     return;
                 }
 
                 // New ray was generated
-                uint32_t ray_index = produced_rays_acc_ref.fetch_add(1);
-                new_ray_buffer[ray_index] = ray_data;
+                // uint32_t ray_index = produced_rays_acc_ref.fetch_add(1);
+                new_ray_buffer[ray_data.ray.id] = ray_data;
             });
         })
         .wait();
@@ -169,11 +179,9 @@ void WavefrontRenderer::convert_image_to_srgb() {
     app.queue
         .submit([&](sycl::handler &cgh) {
             auto image_reader =
-                this->current_buffer().image.get_access<float4, sycl::access::mode::read>(
-                    cgh
-                );
+                this->image.get_access<float4, sycl::access::mode::read>(cgh);
             auto output_image_writer =
-                output_image.get_access<float4, sycl::access::mode::write>(cgh);
+                this->output_image.get_access<float4, sycl::access::mode::write>(cgh);
 
             range<2> local_size{8, 8};
             range<2> n_groups = {
@@ -194,8 +202,9 @@ void WavefrontRenderer::convert_image_to_srgb() {
                     int2 pixel_coords = {global_id[0], global_id[1]};
 
                     float4 img_val = image_reader.read(pixel_coords);
-                    img_val = linear_to_gamma(img_val);
-                    // / (float)SAMPLE_COUNT;
+                    img_val = linear_to_gamma(
+                        float4(img_val.x(), img_val.y(), img_val.z(), 1.0f)
+                    );
 
                     output_image_writer.write(pixel_coords, img_val);
                 }
@@ -213,7 +222,8 @@ void WavefrontRenderer::render_frame(const Camera &camera, const Scene &scene) {
 
     // for (uint32_t sample = 0; sample < SAMPLE_COUNT; sample++) {
     for (uint32_t depth = 0; depth < MAX_DEPTH; depth++) {
-        total_ray_count += this->current_buffer().ray_buffer_length.get_host_access()[0];
+        // total_ray_count +=
+        // this->current_buffer().ray_buffer_length.get_host_access()[0];
 
         buffer_index++;
 

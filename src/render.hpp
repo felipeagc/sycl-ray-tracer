@@ -9,8 +9,8 @@
 
 namespace raytracer {
 
-constexpr uint32_t MAX_DEPTH = 11;
-constexpr uint32_t SAMPLE_COUNT = 256;
+constexpr uint32_t MAX_DEPTH = 10;
+constexpr uint32_t SAMPLE_COUNT = 1;
 
 struct IRenderer {
     virtual void render_frame(

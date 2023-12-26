@@ -16,32 +16,18 @@ struct RayData {
 struct Buffers {
     sycl::buffer<uint32_t> ray_buffer_length;
     RayData *ray_buffer;
-    sycl::image<2> image;
 
-    Buffers(App &app, sycl::range<2> img_size)
-        : image(
-              sycl::image_channel_order::rgba, sycl::image_channel_type::fp32, img_size
-          ),
-          ray_buffer_length(&ZERO, 1) {
+    Buffers(App &app, sycl::range<2> img_size) : ray_buffer_length(&ZERO, 1) {
         this->ray_buffer = (RayData *)sycl::aligned_alloc_device(
             alignof(RayData), sizeof(RayData) * img_size.size(), app.queue
         );
-
-        app.queue
-            .submit([&](sycl::handler &cgh) {
-                auto image_writer =
-                    this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
-                cgh.parallel_for(sycl::range<2>(img_size), [=](sycl::item<2> item) {
-                    image_writer.write(sycl::int2(item[0], item[1]), sycl::float4(0.0f));
-                });
-            })
-            .wait();
     }
 };
 
 struct WavefrontRenderer : public IRenderer {
     App &app;
     sycl::range<2> img_size;
+    sycl::image<2> image;
     sycl::image<2> &output_image;
 
     uint32_t buffer_index = 0;
