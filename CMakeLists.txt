@@ -27,6 +27,7 @@ set(
     src/main.cpp
     src/scene.cpp
     src/render_megakernel.cpp
+    src/render_wavefront.cpp
 )
 
 set(

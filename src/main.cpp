@@ -2,10 +2,13 @@
 
 #include "render.hpp"
 #include "render_megakernel.hpp"
+#include "render_wavefront.hpp"
 
 int main(int argc, char *argv[]) {
     try {
         raytracer::App app;
+
+        const std::string renderer_name = (argc == 2) ? argv[1] : "wavefront";
 
         // Calculate viewport size
         sycl::range<2> img_size = sycl::range<2>(1920, 1080);
@@ -29,9 +32,15 @@ int main(int argc, char *argv[]) {
             scene.camera_focal_length
         );
 
-        std::unique_ptr<raytracer::IRenderer> renderer(
-            new raytracer::MegakernelRenderer(app)
-        );
+        std::unique_ptr<raytracer::IRenderer> renderer;
+        if (renderer_name == "megakernel") {
+            renderer.reset(new raytracer::MegakernelRenderer(app));
+        } else if (renderer_name == "wavefront") {
+            renderer.reset(new raytracer::WavefrontRenderer(app));
+        } else {
+            throw std::runtime_error("Unknown renderer");
+        }
+
         renderer->render_frame(camera, scene, img_size, image);
     } catch (sycl::exception const &e) {
         fmt::println("Caught SYCL exception: {}", e.what());

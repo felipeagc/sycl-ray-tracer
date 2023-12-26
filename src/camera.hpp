@@ -16,8 +16,7 @@ struct Camera {
     sycl::float3 pixel_delta_u;
     sycl::float3 pixel_delta_v;
 
-    static constexpr int max_samples = 100;
-    static constexpr int max_bounces = 100;
+    sycl::int2 img_size;
 
     Camera(
         sycl::range<2> img_size,
@@ -27,6 +26,9 @@ struct Camera {
     ) {
         using sycl::float2;
         using sycl::float3;
+
+        this->img_size[0] = img_size[0];
+        this->img_size[1] = img_size[1];
 
         this->center[0] = cam_center.x;
         this->center[1] = cam_center.y;
@@ -75,7 +77,7 @@ struct Camera {
 
             .tfar = std::numeric_limits<float>::infinity(),
             .mask = UINT32_MAX,
-            .id = 0,
+            .id = (uint32_t)(pixel_coords.x() + (pixel_coords.y() * this->img_size[0])),
             .flags = 0,
         };
     }

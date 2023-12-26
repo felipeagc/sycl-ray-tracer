@@ -23,10 +23,8 @@ static float3 render_pixel(
     float3 attenuation = float3(1.0f);
     float3 radiance = float3(0.0f);
 
-    constexpr uint32_t max_bounces = 50;
-
     RTCRay ray = ctx.camera.get_ray(pixel_coords, rng);
-    for (uint32_t i = 0; i < max_bounces; ++i) {
+    for (uint32_t i = 0; i < MAX_DEPTH; ++i) {
         ray_count++;
 
         auto res = trace_ray(ctx, rng, ray, attenuation, radiance);
@@ -93,14 +91,12 @@ void MegakernelRenderer::render_frame(
                     std::hash<std::size_t>{}(id.get_global_linear_id());
                 auto rng = XorShift32State{(uint32_t)init_generator_state};
 
-                constexpr uint32_t sample_count = 512;
-
                 uint32_t ray_count = 0;
                 float3 pixel_color = float3(0, 0, 0);
-                for (uint32_t i = 0; i < sample_count; ++i) {
+                for (uint32_t i = 0; i < SAMPLE_COUNT; ++i) {
                     pixel_color += render_pixel(ctx, rng, pixel_coords, ray_count);
                 }
-                pixel_color /= (float)sample_count;
+                pixel_color /= (float)SAMPLE_COUNT;
 
                 pixel_color = linear_to_gamma(pixel_color);
 
