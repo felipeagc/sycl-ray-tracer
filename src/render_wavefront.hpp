@@ -28,6 +28,7 @@ struct WavefrontRenderer : public IRenderer {
     App &app;
     sycl::range<2> img_size;
     sycl::image<2> image;
+    sycl::image<2> combined_image;
     sycl::image<2> &output_image;
 
     uint32_t buffer_index = 0;
@@ -45,8 +46,9 @@ struct WavefrontRenderer : public IRenderer {
     }
 
   private:
-    void generate_camera_rays(const Camera &camera);
+    void generate_camera_rays(const Camera &camera, uint32_t sample);
     void shoot_rays(const Camera &camera, const Scene &scene, uint32_t depth);
+    void merge_samples(uint32_t sample);
     void convert_image_to_srgb();
 };
 } // namespace raytracer

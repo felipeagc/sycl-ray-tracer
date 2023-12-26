@@ -15,22 +15,29 @@ WavefrontRenderer::WavefrontRenderer(
 )
     : app(app), img_size(img_size),
       image(sycl::image_channel_order::rgba, sycl::image_channel_type::fp32, img_size),
+      combined_image(sycl::image_channel_order::rgba, sycl::image_channel_type::fp32, img_size),
       buffers({Buffers(app, img_size), Buffers(app, img_size)}),
       output_image(output_image) {
     app.queue
         .submit([&](sycl::handler &cgh) {
             auto image_writer =
                 this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
+            auto combined_image_writer =
+                this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
             cgh.parallel_for(sycl::range<2>(img_size), [=](sycl::item<2> item) {
                 image_writer.write(sycl::int2(item[0], item[1]), sycl::float4(0.0f));
+                combined_image_writer.write(sycl::int2(item[0], item[1]), sycl::float4(0.0f));
             });
         })
         .wait();
 }
 
-void WavefrontRenderer::generate_camera_rays(const Camera &camera) {
+void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t sample) {
     app.queue
         .submit([&](sycl::handler &cgh) {
+            auto image_writer =
+                this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
+
             auto produced_rays_acc =
                 this->current_buffer()
                     .ray_buffer_length.get_access<sycl::access_mode::read_write>(cgh);
@@ -60,8 +67,10 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera) {
 
                 int2 pixel_coords = {global_id[0], global_id[1]};
 
+                image_writer.write(pixel_coords, sycl::float4(0.0f));
+
                 auto init_generator_state =
-                    std::hash<std::size_t>{}(id.get_global_linear_id());
+                    std::hash<std::size_t>{}(id.get_global_linear_id() + 33469 * sample);
                 auto rng = XorShift32State{(uint32_t)init_generator_state};
                 RTCRay ray = camera.get_ray(pixel_coords, rng);
 
@@ -152,11 +161,12 @@ void WavefrontRenderer::shoot_rays(
 
                     float4 prev_value = image_reader.read(pixel_coords);
                     // float4 final_value =
-                    //     sycl::mix(prev_value, final_color, 1.0f / ((float)depth + 1.0f));
+                    //     sycl::mix(prev_value, final_color, 1.0f / ((float)depth
+                    //     + 1.0f));
 
-                    float4 final_value = prev_value + final_color;
+                    float4 final_value = final_color;
 
-                    image_writer.write(pixel_coords, prev_value + final_value);
+                    image_writer.write(pixel_coords, final_value);
 
                     return;
                 }
@@ -174,15 +184,17 @@ void WavefrontRenderer::shoot_rays(
         .wait();
 }
 
-void WavefrontRenderer::convert_image_to_srgb() {
+void WavefrontRenderer::merge_samples(uint32_t sample) {
     app.queue
         .submit([&](sycl::handler &cgh) {
             sycl::stream os(8192, 256, cgh);
 
             auto image_reader =
                 this->image.get_access<float4, sycl::access::mode::read>(cgh);
-            auto output_image_writer =
-                this->output_image.get_access<float4, sycl::access::mode::write>(cgh);
+            auto combined_image_reader =
+                this->combined_image.get_access<float4, sycl::access::mode::read>(cgh);
+            auto combined_image_writer =
+                this->combined_image.get_access<float4, sycl::access::mode::write>(cgh);
 
             range<2> local_size{8, 8};
             range<2> n_groups = {
@@ -204,11 +216,48 @@ void WavefrontRenderer::convert_image_to_srgb() {
 
                     float4 img_val = image_reader.read(pixel_coords);
 
-                    img_val = linear_to_gamma(
-                        float4(img_val.x(), img_val.y(), img_val.z(), 1.0f)
-                    );
+                    float4 combined_val = combined_image_reader.read(pixel_coords);
 
-                    output_image_writer.write(pixel_coords, img_val);
+                    // float4 final_value =
+                    //     sycl::mix(output_val, img_val, 1.0f / ((float)sample + 1.0f));
+
+                    combined_image_writer.write(pixel_coords, combined_val + img_val);
+                }
+            );
+        })
+        .wait();
+}
+
+void WavefrontRenderer::convert_image_to_srgb() {
+    app.queue
+        .submit([&](sycl::handler &cgh) {
+            sycl::stream os(8192, 256, cgh);
+
+            auto combined_image_reader =
+                this->combined_image.get_access<float4, sycl::access::mode::read>(cgh);
+            auto output_image_writer =
+                this->output_image.get_access<float4, sycl::access::mode::write>(cgh);
+
+            range<2> local_size{8, 8};
+            range<2> n_groups = {
+                ((img_size[0] + local_size[0] - 1) / local_size[0]),
+                ((img_size[1] + local_size[1] - 1) / local_size[1]),
+            };
+
+            const auto img_size = this->img_size;
+
+            cgh.parallel_for(
+                sycl::nd_range<2>(n_groups * local_size, local_size),
+                [=](sycl::nd_item<2> id) {
+                    auto global_id = id.get_global_id();
+                    if (global_id[0] >= img_size[0] || global_id[1] >= img_size[1]) {
+                        return;
+                    }
+
+                    int2 pixel_coords = {global_id[0], global_id[1]};
+
+                    float4 img_val = combined_image_reader.read(pixel_coords) / (float)SAMPLE_COUNT;
+                    output_image_writer.write(pixel_coords, linear_to_gamma(img_val));
                 }
             );
         })
@@ -218,19 +267,24 @@ void WavefrontRenderer::convert_image_to_srgb() {
 void WavefrontRenderer::render_frame(const Camera &camera, const Scene &scene) {
     auto begin = std::chrono::high_resolution_clock::now();
 
-    this->generate_camera_rays(camera);
-
     uint32_t total_ray_count = 0;
 
-    // for (uint32_t sample = 0; sample < SAMPLE_COUNT; sample++) {
-    for (uint32_t depth = 0; depth < MAX_DEPTH; depth++) {
-        total_ray_count += this->current_buffer().ray_buffer_length.get_host_access()[0];
+    for (uint32_t sample = 0; sample < SAMPLE_COUNT; sample++) {
+        fmt::println("Sample {}", sample);
 
-        buffer_index++;
+        this->generate_camera_rays(camera, sample);
 
-        this->shoot_rays(camera, scene, depth);
+        for (uint32_t depth = 0; depth < MAX_DEPTH; depth++) {
+            total_ray_count +=
+                this->current_buffer().ray_buffer_length.get_host_access()[0];
+
+            buffer_index++;
+
+            this->shoot_rays(camera, scene, depth);
+        }
+
+        this->merge_samples(sample);
     }
-    // }
 
     this->convert_image_to_srgb();
 
