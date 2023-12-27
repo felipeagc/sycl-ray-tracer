@@ -148,6 +148,8 @@ glm::mat4 Scene::node_global_matrix(const Node &node) const {
 void Scene::load_images(App &app, const tinygltf::Model &gltf_model) {
     this->images.resize(gltf_model.images.size());
 
+    fmt::println("Loading {} images", gltf_model.images.size());
+
     for (size_t i = 0; i < gltf_model.images.size(); i++) {
         const tinygltf::Image &gltf_image = gltf_model.images[i];
 
@@ -203,8 +205,12 @@ void Scene::load_primitives(App &app, const tinygltf::Model &gltf_model) {
             }
             emissive = emissive * emissive_strength;
 
-            if (auto ior_ext = gltf_material.extensions.find("KHR_materials_ior");
-                ior_ext != gltf_material.extensions.end()) {
+            auto ior_ext = gltf_material.extensions.find("KHR_materials_ior");
+            auto transmission_ext =
+                gltf_material.extensions.find("KHR_materials_transmission");
+
+            if (ior_ext != gltf_material.extensions.end() &&
+                transmission_ext != gltf_material.extensions.end()) {
                 float ior = (float)ior_ext->second.Get("ior").GetNumberAsDouble();
                 primitive.material = MaterialDielectric{
                     .ior = ior,

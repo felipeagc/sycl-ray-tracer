@@ -20,6 +20,12 @@ TODO:
 
 - [x] Avoid global atomic in generate_camera_rays
 
+- [ ] Russian roulette ray tracing
+      https://computergraphics.stackexchange.com/questions/2316/is-russian-roulette-really-the-answer
+      https://www.pbr-book.org/3ed-2018/Monte_Carlo_Integration/Russian_Roulette_and_Splitting
+- [ ] Use splats
+      https://aras-p.info/blog/2018/04/25/Daily-Pathtracer-12-GPU-Buffer-Oriented-D3D11/
+
 ## Performance log
 
 ### Sponza scene
@@ -28,6 +34,7 @@ TODO:
     Megakernel:
     - 2023-12-26 19:00 - 1.11s - 545M rays/s
     - 2023-12-27 14:33 - Ray data compaction? - 1.01s - 599.89M rays/s
+    - 2023-12-27 16:29 - ??? - 0.96s - 634.38M rays/s
 
     Wavefront:
     - 2023-12-26 19:00 - Initial implementation - 32.89s - 18.57M rays/s

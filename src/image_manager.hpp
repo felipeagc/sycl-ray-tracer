@@ -36,28 +36,6 @@ struct ImageManager {
     ImageManager(ImageManager &&) = delete;
     ImageManager &operator=(ImageManager &&) = delete;
 
-    ImageRef upload_image_pixel(sycl::float4 color) {
-        uint32_t image_index = this->images.size();
-        if (image_index >= MAX_IMAGES) {
-            fmt::print("Too many images uploaded\n");
-            std::terminate();
-        }
-
-        this->images.push_back(Image{
-            .data =
-                std::vector<uint8_t>(IMAGE_SIZE.x() * IMAGE_SIZE.y() * IMAGE_CHANNELS),
-        });
-
-        for (uint32_t i = 0; i < IMAGE_SIZE.x() * IMAGE_SIZE.y(); i++) {
-            for (uint32_t j = 0; j < IMAGE_CHANNELS; j++) {
-                this->images[image_index].data[i * IMAGE_CHANNELS + j] =
-                    (uint8_t)(color[j] * 255.0f);
-            }
-        }
-
-        return ImageRef{image_index};
-    }
-
     ImageRef upload_image(uint32_t width, uint32_t height, const uint8_t *data) {
         uint32_t image_index = this->images.size();
         if (image_index >= MAX_IMAGES) {
