@@ -11,13 +11,19 @@ using sycl::int2;
 using sycl::range;
 
 WavefrontRenderer::WavefrontRenderer(
-    App &app, sycl::range<2> img_size, sycl::image<2> &output_image
+    App &app,
+    sycl::range<2> img_size,
+    sycl::image<2> &output_image,
+    uint32_t max_depth,
+    uint32_t sample_count
 )
     : app(app), img_size(img_size),
       image(sycl::image_channel_order::rgba, sycl::image_channel_type::fp32, img_size),
-      combined_image(sycl::image_channel_order::rgba, sycl::image_channel_type::fp32, img_size),
+      combined_image(
+          sycl::image_channel_order::rgba, sycl::image_channel_type::fp32, img_size
+      ),
       buffers({Buffers(app, img_size), Buffers(app, img_size)}),
-      output_image(output_image) {
+      output_image(output_image), max_depth(max_depth), sample_count(sample_count) {
     app.queue
         .submit([&](sycl::handler &cgh) {
             auto image_writer =
@@ -26,7 +32,9 @@ WavefrontRenderer::WavefrontRenderer(
                 this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
             cgh.parallel_for(sycl::range<2>(img_size), [=](sycl::item<2> item) {
                 image_writer.write(sycl::int2(item[0], item[1]), sycl::float4(0.0f));
-                combined_image_writer.write(sycl::int2(item[0], item[1]), sycl::float4(0.0f));
+                combined_image_writer.write(
+                    sycl::int2(item[0], item[1]), sycl::float4(0.0f)
+                );
             });
         })
         .wait();
@@ -127,8 +135,9 @@ void WavefrontRenderer::shoot_rays(
 
             const auto prev_ray_buffer = this->prev_buffer().ray_buffer;
             const auto new_ray_buffer = this->current_buffer().ray_buffer;
+            const uint32_t max_depth = this->max_depth;
 
-            cgh.parallel_for(for_range, [=](sycl::nd_item<1> id) {
+            cgh.parallel_for(for_range, [=](sycl::nd_item<1> id, sycl::kernel_handler h) {
                 auto global_id = id.get_global_id();
                 if (global_id >= prev_ray_count) {
                     return;
@@ -171,7 +180,7 @@ void WavefrontRenderer::shoot_rays(
                     return;
                 }
 
-                if (depth == (MAX_DEPTH - 1)) {
+                if (depth == (max_depth - 1)) {
                     image_writer.write(pixel_coords, float4(0.0f, 0.0f, 0.0f, 1.0f));
                     return;
                 }
@@ -245,10 +254,11 @@ void WavefrontRenderer::convert_image_to_srgb() {
             };
 
             const auto img_size = this->img_size;
+            const uint32_t sample_count = this->sample_count;
 
             cgh.parallel_for(
                 sycl::nd_range<2>(n_groups * local_size, local_size),
-                [=](sycl::nd_item<2> id) {
+                [=](sycl::nd_item<2> id, sycl::kernel_handler h) {
                     auto global_id = id.get_global_id();
                     if (global_id[0] >= img_size[0] || global_id[1] >= img_size[1]) {
                         return;
@@ -256,7 +266,8 @@ void WavefrontRenderer::convert_image_to_srgb() {
 
                     int2 pixel_coords = {global_id[0], global_id[1]};
 
-                    float4 img_val = combined_image_reader.read(pixel_coords) / (float)SAMPLE_COUNT;
+                    float4 img_val =
+                        combined_image_reader.read(pixel_coords) / (float)sample_count;
                     output_image_writer.write(pixel_coords, linear_to_gamma(img_val));
                 }
             );
@@ -269,12 +280,12 @@ void WavefrontRenderer::render_frame(const Camera &camera, const Scene &scene) {
 
     uint32_t total_ray_count = 0;
 
-    for (uint32_t sample = 0; sample < SAMPLE_COUNT; sample++) {
+    for (uint32_t sample = 0; sample < this->sample_count; sample++) {
         fmt::println("Sample {}", sample);
 
         this->generate_camera_rays(camera, sample);
 
-        for (uint32_t depth = 0; depth < MAX_DEPTH; depth++) {
+        for (uint32_t depth = 0; depth < this->max_depth; depth++) {
             total_ray_count +=
                 this->current_buffer().ray_buffer_length.get_host_access()[0];
 

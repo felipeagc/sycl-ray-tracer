@@ -1,14 +1,39 @@
 #include <fmt/core.h>
 
+#include <CLI11.hpp>
 #include "render.hpp"
 #include "render_megakernel.hpp"
 #include "render_wavefront.hpp"
 
-int main(int argc, char *argv[]) {
+int main(int argc, const char *argv[]) {
+    CLI::App cli_app{"App description"};
+
+    uint32_t max_depth = 10;
+    cli_app.add_option("-d,--max-depth", max_depth, "Max depth");
+    uint32_t sample_count = 32;
+    cli_app.add_option("-s,--sample-count", sample_count, "Sample count");
+
+    bool use_wavefront = false;
+    cli_app.add_flag("-w,--wavefront", use_wavefront, "Use wavefront renderer");
+    bool use_megakernel = false;
+    cli_app.add_flag("-m,--megakernel", use_megakernel, "Use megakernel renderer");
+
+    CLI11_PARSE(cli_app, argc, argv);
+
+    if (!use_wavefront && !use_megakernel) {
+        use_wavefront = true;
+    }
+
+    std::string scene_path = "./assets/sponza.glb";
+    auto args = cli_app.remaining();
+    if (args.size() > 0) {
+        scene_path = args[0];
+    }
+
+    fmt::println("Loading scene: {}", scene_path);
+
     try {
         raytracer::App app;
-
-        const std::string renderer_name = (argc == 2) ? argv[1] : "wavefront";
 
         // Calculate viewport size
         sycl::range<2> img_size = sycl::range<2>(1920, 1080);
@@ -23,7 +48,7 @@ int main(int argc, char *argv[]) {
             img_size
         );
 
-        raytracer::Scene scene(app, "./assets/sponza.glb");
+        raytracer::Scene scene(app, scene_path);
 
         raytracer::Camera camera(
             img_size,
@@ -33,10 +58,14 @@ int main(int argc, char *argv[]) {
         );
 
         std::unique_ptr<raytracer::IRenderer> renderer;
-        if (renderer_name == "megakernel") {
-            renderer.reset(new raytracer::MegakernelRenderer(app, img_size, image));
-        } else if (renderer_name == "wavefront") {
-            renderer.reset(new raytracer::WavefrontRenderer(app, img_size, image));
+        if (use_megakernel) {
+            renderer.reset(new raytracer::MegakernelRenderer(
+                app, img_size, image, max_depth, sample_count
+            ));
+        } else if (use_wavefront) {
+            renderer.reset(new raytracer::WavefrontRenderer(
+                app, img_size, image, max_depth, sample_count
+            ));
         } else {
             throw std::runtime_error("Unknown renderer");
         }

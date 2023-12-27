@@ -34,7 +34,16 @@ struct WavefrontRenderer : public IRenderer {
     uint32_t buffer_index = 0;
     std::array<Buffers, 2> buffers;
 
-    WavefrontRenderer(App &app, sycl::range<2> img_size, sycl::image<2> &output_image);
+    const uint32_t max_depth;
+    const uint32_t sample_count;
+
+    WavefrontRenderer(
+        App &app,
+        sycl::range<2> img_size,
+        sycl::image<2> &output_image,
+        uint32_t max_depth,
+        uint32_t sample_count
+    );
 
     virtual void render_frame(const Camera &camera, const Scene &scene) override;
 

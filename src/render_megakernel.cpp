@@ -17,14 +17,21 @@ using sycl::float4;
 using sycl::int2;
 using sycl::range;
 
+constexpr sycl::specialization_id<uint32_t> max_depth_spec_id;
+constexpr sycl::specialization_id<uint32_t> sample_count_spec_id;
+
 static float3 render_pixel(
-    const RenderContext &ctx, XorShift32State &rng, int2 pixel_coords, uint32_t &ray_count
+    const RenderContext &ctx,
+    XorShift32State &rng,
+    int2 pixel_coords,
+    uint32_t max_depth,
+    uint32_t &ray_count
 ) {
     float3 attenuation = float3(1.0f);
     float3 radiance = float3(0.0f);
 
     RTCRay ray = ctx.camera.get_ray(pixel_coords, rng);
-    for (uint32_t i = 0; i < MAX_DEPTH; ++i) {
+    for (uint32_t i = 0; i < max_depth; ++i) {
         ray_count++;
 
         auto res = trace_ray(ctx, rng, ray, attenuation, radiance);
@@ -37,9 +44,14 @@ static float3 render_pixel(
 }
 
 MegakernelRenderer::MegakernelRenderer(
-    App &app, sycl::range<2> img_size, sycl::image<2> &image
+    App &app,
+    sycl::range<2> img_size,
+    sycl::image<2> &image,
+    uint32_t max_depth,
+    uint32_t sample_count
 )
-    : app(app), img_size(img_size), image(image) {}
+    : app(app), img_size(img_size), image(image), max_depth(max_depth),
+      sample_count(sample_count) {}
 
 void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) {
     uint32_t initial_ray_count = 0;
@@ -48,6 +60,9 @@ void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) 
     auto begin = std::chrono::high_resolution_clock::now();
 
     auto e = app.queue.submit([&](sycl::handler &cgh) {
+        cgh.set_specialization_constant<max_depth_spec_id>(this->max_depth);
+        cgh.set_specialization_constant<sample_count_spec_id>(this->sample_count);
+
         sycl::stream os(8192, 256, cgh);
 
         auto image_writer = image.get_access<float4, sycl::access::mode::write>(cgh);
@@ -75,11 +90,15 @@ void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) 
 
         cgh.parallel_for(
             sycl::nd_range<2>(n_groups * local_size, local_size),
-            [=](sycl::nd_item<2> id) {
+            [=](sycl::nd_item<2> id, sycl::kernel_handler h) {
                 auto global_id = id.get_global_id();
                 if (global_id[0] >= img_size[0] || global_id[1] >= img_size[1]) {
                     return;
                 }
+
+                uint32_t max_depth = h.get_specialization_constant<max_depth_spec_id>();
+                uint32_t sample_count =
+                    h.get_specialization_constant<sample_count_spec_id>();
 
                 int2 pixel_coords = {global_id[0], global_id[1]};
 
@@ -96,10 +115,11 @@ void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) 
 
                 uint32_t ray_count = 0;
                 float3 pixel_color = float3(0, 0, 0);
-                for (uint32_t i = 0; i < SAMPLE_COUNT; ++i) {
-                    pixel_color += render_pixel(ctx, rng, pixel_coords, ray_count);
+                for (uint32_t i = 0; i < sample_count; ++i) {
+                    pixel_color +=
+                        render_pixel(ctx, rng, pixel_coords, max_depth, ray_count);
                 }
-                pixel_color /= (float)SAMPLE_COUNT;
+                pixel_color /= (float)sample_count;
 
                 pixel_color = linear_to_gamma(pixel_color);
 

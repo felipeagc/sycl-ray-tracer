@@ -8,6 +8,26 @@ TODO:
 - [x] Load textures
 - [x] Sample texture colors
 
+- [x] Add cli args parsing for specifying max depth and sample count
+- [x] Use specialization constants to pass max depth and sample count to kernels
+
+- [ ] Buffer that stores rng state for each pixel
+      This will help avoid patterns caused by bad RNG
+- [ ] Optimize space taken by ray data
+    - [ ] Try float16 for direction vectors
+- [ ] Avoid that global atomic (probably biggest bottleneck)
+      Use group shared memory for storing produced rays and then combine them later.
+
+## Performance log
+
+### Sponza scene
+
+Megakernel (d=10, s=32):
+- 2023-12-26 19:00 - 1.11s - 545M rays/s
+
+Wavefront (d=10, s=32):
+- 2023-12-26 19:00 - Initial implementation - 32.89s - 18.57M rays/s
+
 ## Wavefront raytracing
 
 Consists of 4 phases:
