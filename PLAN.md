@@ -11,7 +11,7 @@ TODO:
 - [x] Add cli args parsing for specifying max depth and sample count
 - [x] Use specialization constants to pass max depth and sample count to kernels
 
-- [ ] Buffer that stores rng state for each pixel
+- [x] Buffer that stores rng state for each pixel
       This will help avoid patterns caused by bad RNG
 - [ ] Optimize space taken by ray data
     - [ ] Try float16 for direction vectors

@@ -10,6 +10,25 @@ using sycl::float4;
 using sycl::int2;
 using sycl::range;
 
+struct ScopedRng {
+    ScopedRng(int2 pixel_coords, sycl::range<2> img_size, XorShift32State *rng_buffer) {
+        this->rng_ptr = &rng_buffer[pixel_coords[0] + (pixel_coords[1] * img_size[0])];
+        this->rng = *this->rng_ptr;
+    }
+
+    ~ScopedRng() {
+        *this->rng_ptr = this->rng;
+    }
+
+    operator XorShift32State &() {
+        return rng;
+    }
+
+  private:
+    XorShift32State rng;
+    XorShift32State *rng_ptr;
+};
+
 WavefrontRenderer::WavefrontRenderer(
     App &app,
     sycl::range<2> img_size,
@@ -24,17 +43,32 @@ WavefrontRenderer::WavefrontRenderer(
       ),
       buffers({Buffers(app, img_size), Buffers(app, img_size)}),
       output_image(output_image), max_depth(max_depth), sample_count(sample_count) {
+    this->rng_buffer = (XorShift32State *)sycl::aligned_alloc_device(
+        alignof(XorShift32State), sizeof(XorShift32State) * img_size.size(), app.queue
+    );
+
     app.queue
         .submit([&](sycl::handler &cgh) {
             auto image_writer =
                 this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
             auto combined_image_writer =
                 this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
+
+            auto rng_buffer = this->rng_buffer;
+            auto img_size = this->img_size;
+
             cgh.parallel_for(sycl::range<2>(img_size), [=](sycl::item<2> item) {
-                image_writer.write(sycl::int2(item[0], item[1]), sycl::float4(0.0f));
-                combined_image_writer.write(
-                    sycl::int2(item[0], item[1]), sycl::float4(0.0f)
-                );
+                sycl::int2 pixel_coords(item[0], item[1]);
+
+                image_writer.write(pixel_coords, sycl::float4(0.0f));
+                combined_image_writer.write(pixel_coords, sycl::float4(0.0f));
+
+                // Initialize RNG state
+                uint32_t pixel_linear_pos =
+                    pixel_coords[0] + (pixel_coords[1] * img_size[0]);
+                auto init_generator_state = std::hash<std::size_t>{}(pixel_linear_pos);
+                rng_buffer[pixel_linear_pos] =
+                    XorShift32State{(uint32_t)init_generator_state};
             });
         })
         .wait();
@@ -59,6 +93,7 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t samp
 
             auto img_size = this->img_size;
             auto ray_buffer = this->current_buffer().ray_buffer;
+            auto rng_buffer = this->rng_buffer;
 
             cgh.parallel_for(for_range, [=](sycl::nd_item<2> id) {
                 auto global_id = id.get_global_id();
@@ -77,9 +112,8 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t samp
 
                 image_writer.write(pixel_coords, sycl::float4(0.0f));
 
-                auto init_generator_state =
-                    std::hash<std::size_t>{}(id.get_global_linear_id() + 33469 * sample);
-                auto rng = XorShift32State{(uint32_t)init_generator_state};
+                ScopedRng rng(pixel_coords, img_size, rng_buffer);
+
                 RTCRay ray = camera.get_ray(pixel_coords, rng);
 
                 uint32_t ray_index = produced_rays_ref.fetch_add(1);
@@ -87,7 +121,6 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t samp
                     .ray = ray,
                     .attenuation = float3(1.0f),
                     .radiance = float3(0.0f),
-                    .rng = rng,
                 };
                 ray_buffer[ray_index] = ray_data;
             });
@@ -136,8 +169,10 @@ void WavefrontRenderer::shoot_rays(
             const auto prev_ray_buffer = this->prev_buffer().ray_buffer;
             const auto new_ray_buffer = this->current_buffer().ray_buffer;
             const uint32_t max_depth = this->max_depth;
+            const range<2> img_size = this->img_size;
+            XorShift32State *rng_buffer = this->rng_buffer;
 
-            cgh.parallel_for(for_range, [=](sycl::nd_item<1> id, sycl::kernel_handler h) {
+            cgh.parallel_for(for_range, [=](sycl::nd_item<1> id) {
                 auto global_id = id.get_global_id();
                 if (global_id >= prev_ray_count) {
                     return;
@@ -152,17 +187,15 @@ void WavefrontRenderer::shoot_rays(
 
                 RayData ray_data = prev_ray_buffer[global_id];
 
-                auto res = trace_ray(
-                    ctx,
-                    ray_data.rng,
-                    ray_data.ray,
-                    ray_data.attenuation,
-                    ray_data.radiance
-                );
-
                 sycl::int2 pixel_coords = {
                     ray_data.ray.id % ctx.camera.img_size[0],
                     ray_data.ray.id / ctx.camera.img_size[0]};
+
+                ScopedRng rng(pixel_coords, img_size, rng_buffer);
+
+                auto res = trace_ray(
+                    ctx, rng, ray_data.ray, ray_data.attenuation, ray_data.radiance
+                );
 
                 if (res) {
                     // Final value is computed. Write to image.
@@ -258,7 +291,7 @@ void WavefrontRenderer::convert_image_to_srgb() {
 
             cgh.parallel_for(
                 sycl::nd_range<2>(n_groups * local_size, local_size),
-                [=](sycl::nd_item<2> id, sycl::kernel_handler h) {
+                [=](sycl::nd_item<2> id) {
                     auto global_id = id.get_global_id();
                     if (global_id[0] >= img_size[0] || global_id[1] >= img_size[1]) {
                         return;

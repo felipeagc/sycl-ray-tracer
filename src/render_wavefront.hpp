@@ -10,7 +10,6 @@ struct RayData {
     RTCRay ray;
     sycl::float3 attenuation;
     sycl::float3 radiance;
-    XorShift32State rng;
 };
 
 struct Buffers {
@@ -33,6 +32,8 @@ struct WavefrontRenderer : public IRenderer {
 
     uint32_t buffer_index = 0;
     std::array<Buffers, 2> buffers;
+
+    XorShift32State *rng_buffer;
 
     const uint32_t max_depth;
     const uint32_t sample_count;
