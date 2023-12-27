@@ -77,16 +77,19 @@ WavefrontRenderer::WavefrontRenderer(
 void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t sample) {
     app.queue
         .submit([&](sycl::handler &cgh) {
-            auto image_writer =
-                this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
-
-            range<2> local_size{8, 8};
+            // Group size / range
+            range<2> local_size{16, 16};
             range<2> n_groups = {
                 ((img_size[0] + local_size[0] - 1) / local_size[0]),
                 ((img_size[1] + local_size[1] - 1) / local_size[1]),
             };
             sycl::nd_range<2> for_range(n_groups * local_size, local_size);
 
+            // Accessors
+            auto image_writer =
+                this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
+
+            // Params
             auto img_size = this->img_size;
             auto ray_buffer = this->current_buffer().ray_buffer;
             uint32_t *global_ray_count = this->current_buffer().ray_buffer_length;
@@ -147,30 +150,24 @@ void WavefrontRenderer::shoot_rays(
             }
 
             // Group size / range
-
-            range<1> local_size = 512;
+            range<1> local_size = 32;
             range<1> n_groups = ((prev_ray_count + local_size - 1) / local_size);
             sycl::nd_range<1> for_range(n_groups * local_size, local_size);
 
             // Accessors
-
             sycl::local_accessor<uint32_t, 1> local_ray_count_accessor(
                 sycl::range<1>(1), cgh
             );
-
             sycl::local_accessor<uint32_t, 1> local_first_ray_index_accessor(
                 sycl::range<1>(1), cgh
             );
-
             sycl::local_accessor<RayData, 1> local_ray_data(
                 sycl::range<1>(local_size), cgh
             );
-
             auto image_writer =
                 this->image.get_access<float4, sycl::access::mode::write>(cgh);
 
             // Params
-
             RenderContext ctx = {
                 .camera = camera,
                 .sky_color = scene.sky_color,
@@ -277,8 +274,6 @@ void WavefrontRenderer::shoot_rays(
 void WavefrontRenderer::merge_samples(uint32_t sample) {
     app.queue
         .submit([&](sycl::handler &cgh) {
-            sycl::stream os(8192, 256, cgh);
-
             auto image_reader =
                 this->image.get_access<float4, sycl::access::mode::read>(cgh);
             auto combined_image_reader =
@@ -286,7 +281,7 @@ void WavefrontRenderer::merge_samples(uint32_t sample) {
             auto combined_image_writer =
                 this->combined_image.get_access<float4, sycl::access::mode::write>(cgh);
 
-            range<2> local_size{8, 8};
+            range<2> local_size{16, 16};
             range<2> n_groups = {
                 ((img_size[0] + local_size[0] - 1) / local_size[0]),
                 ((img_size[1] + local_size[1] - 1) / local_size[1]),
@@ -321,14 +316,12 @@ void WavefrontRenderer::merge_samples(uint32_t sample) {
 void WavefrontRenderer::convert_image_to_srgb() {
     app.queue
         .submit([&](sycl::handler &cgh) {
-            sycl::stream os(8192, 256, cgh);
-
             auto combined_image_reader =
                 this->combined_image.get_access<float4, sycl::access::mode::read>(cgh);
             auto output_image_writer =
                 this->output_image.get_access<float4, sycl::access::mode::write>(cgh);
 
-            range<2> local_size{8, 8};
+            range<2> local_size{16, 16};
             range<2> n_groups = {
                 ((img_size[0] + local_size[0] - 1) / local_size[0]),
                 ((img_size[1] + local_size[1] - 1) / local_size[1]),

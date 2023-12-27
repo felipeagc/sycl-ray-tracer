@@ -31,7 +31,8 @@ Megakernel (d=10, s=32):
 Wavefront (d=10, s=32):
 - 2023-12-26 19:00 - Initial implementation - 32.89s - 18.57M rays/s
 - 2023-12-26 22:19 - RNG buffer - 33.26s - 18.36M rays/s
-- 2023-12-27 14:33 - Stop passing sycl::stream to kernel - 2.00s - 305.12M rays/s
+- 2023-12-27 14:33 - Stop passing sycl::stream to kernel - 1.93s - 315.43M rays/s
+- 2023-12-27 14:33 - Decrease shoot_rays group size from 512 to 32 - 1.57s - 388.18M rays/s
 
 ## Wavefront raytracing
 
