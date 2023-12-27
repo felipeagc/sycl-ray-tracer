@@ -13,6 +13,9 @@ int main(int argc, const char *argv[]) {
     uint32_t sample_count = 32;
     cli_app.add_option("-s,--sample-count", sample_count, "Sample count");
 
+    std::string scene_path = "./assets/sponza.glb";
+    cli_app.add_option("scene_path", scene_path, "Scene path");
+
     bool use_wavefront = false;
     cli_app.add_flag("-w,--wavefront", use_wavefront, "Use wavefront renderer");
     bool use_megakernel = false;
@@ -22,12 +25,6 @@ int main(int argc, const char *argv[]) {
 
     if (!use_wavefront && !use_megakernel) {
         use_wavefront = true;
-    }
-
-    std::string scene_path = "./assets/sponza.glb";
-    auto args = cli_app.remaining();
-    if (args.size() > 0) {
-        scene_path = args[0];
     }
 
     fmt::println("Loading scene: {}", scene_path);
