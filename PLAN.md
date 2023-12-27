@@ -27,6 +27,7 @@ Megakernel (d=10, s=32):
 
 Wavefront (d=10, s=32):
 - 2023-12-26 19:00 - Initial implementation - 32.89s - 18.57M rays/s
+- 2023-12-26 22:19 - RNG buffer - 33.26s - 18.36M rays/s
 
 ## Wavefront raytracing
 
