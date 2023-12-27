@@ -1,16 +1,11 @@
 #pragma once
 
 #include "render.hpp"
+#include "camera.hpp"
 
 namespace raytracer {
 
 static uint32_t ZERO = 0;
-
-struct RayData {
-    RTCRay ray;
-    sycl::float3 attenuation;
-    sycl::float3 radiance;
-};
 
 struct Buffers {
     sycl::buffer<uint32_t> ray_buffer_length;

@@ -13,9 +13,9 @@ TODO:
 
 - [x] Buffer that stores rng state for each pixel
       This will help avoid patterns caused by bad RNG
-- [ ] Optimize space taken by ray data
-    - [ ] Try float16 for direction vectors
-- [ ] Avoid that global atomic (probably biggest bottleneck)
+- [x] Optimize space taken by ray data
+    - [x] Try float16 for direction vectors
+- [x] Avoid that global atomic (probably biggest bottleneck)
       Use group shared memory for storing produced rays and then combine them later.
 
 ## Performance log

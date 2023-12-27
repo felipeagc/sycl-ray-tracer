@@ -30,11 +30,24 @@ static float3 render_pixel(
     float3 attenuation = float3(1.0f);
     float3 radiance = float3(0.0f);
 
-    RTCRay ray = ctx.camera.get_ray(pixel_coords, rng);
+    RayData ray_data = ctx.camera.get_ray(pixel_coords, rng);
     for (uint32_t i = 0; i < max_depth; ++i) {
         ray_count++;
 
-        auto res = trace_ray(ctx, rng, ray, attenuation, radiance);
+        float3 attenuation =
+            float3(ray_data.att_r, ray_data.att_g, ray_data.att_b);
+        float3 radiance =
+            float3(ray_data.rad_r, ray_data.rad_g, ray_data.rad_b);
+
+        auto res = trace_ray(ctx, rng, ray_data, attenuation, radiance);
+        ray_data.att_r = attenuation.x();
+        ray_data.att_g = attenuation.y();
+        ray_data.att_b = attenuation.z();
+
+        ray_data.rad_r = radiance.x();
+        ray_data.rad_g = radiance.y();
+        ray_data.rad_b = radiance.z();
+
         if (res) {
             return *res;
         }

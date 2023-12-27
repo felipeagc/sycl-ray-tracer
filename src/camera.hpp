@@ -9,6 +9,59 @@
 
 namespace raytracer {
 
+struct RayData {
+    float org_x;
+    float org_y;
+    float org_z;
+    uint32_t id;
+
+    sycl::half dir_x;
+    sycl::half dir_y;
+    sycl::half dir_z;
+
+    sycl::half att_r;
+    sycl::half att_g;
+    sycl::half att_b;
+
+    sycl::half rad_r;
+    sycl::half rad_g;
+    sycl::half rad_b;
+
+    RayData(uint32_t ray_id, sycl::float3 origin, sycl::float3 dir) {
+        this->id = ray_id;
+        this->org_x = origin[0];
+        this->org_y = origin[1];
+        this->org_z = origin[2];
+        this->dir_x = sycl::half(dir[0]);
+        this->dir_y = sycl::half(dir[1]);
+        this->dir_z = sycl::half(dir[2]);
+        this->att_r = sycl::half(1.0f);
+        this->att_g = sycl::half(1.0f);
+        this->att_b = sycl::half(1.0f);
+        this->rad_r = sycl::half(0.0f);
+        this->rad_g = sycl::half(0.0f);
+        this->rad_b = sycl::half(0.0f);
+    }
+
+    inline RTCRay to_embree() const {
+        RTCRay ray = {
+            .org_x = this->org_x,
+            .org_y = this->org_y,
+            .org_z = this->org_z,
+            .tnear = 0.0001f,
+            .dir_x = this->dir_x,
+            .dir_y = this->dir_y,
+            .dir_z = this->dir_z,
+            .time = 0.0f,
+            .tfar = std::numeric_limits<float>::infinity(),
+            .mask = UINT32_MAX,
+            .id = this->id,
+            .flags = 0,
+        };
+        return ray;
+    }
+};
+
 struct Camera {
     sycl::float3 center;
 
@@ -53,7 +106,7 @@ struct Camera {
     }
 
     // Get a randomly sampled camera ray for the pixel at location x,y.
-    RTCRay get_ray(sycl::int2 pixel_coords, XorShift32State &rng) const {
+    RayData get_ray(sycl::int2 pixel_coords, XorShift32State &rng) const {
         int x = pixel_coords[0];
         int y = pixel_coords[1];
 
@@ -64,22 +117,9 @@ struct Camera {
         auto ray_origin = this->center;
         auto ray_direction = pixel_sample - ray_origin;
 
-        return RTCRay{
-            .org_x = ray_origin[0],
-            .org_y = ray_origin[1],
-            .org_z = ray_origin[2],
-            .tnear = 0.0001f,
-
-            .dir_x = ray_direction[0],
-            .dir_y = ray_direction[1],
-            .dir_z = ray_direction[2],
-            .time = 0,
-
-            .tfar = std::numeric_limits<float>::infinity(),
-            .mask = UINT32_MAX,
-            .id = (uint32_t)(pixel_coords.x() + (pixel_coords.y() * this->img_size[0])),
-            .flags = 0,
-        };
+        uint32_t ray_id =
+            (uint32_t)(pixel_coords.x() + (pixel_coords.y() * this->img_size[0]));
+        return RayData(ray_id, ray_origin, ray_direction);
     }
 
     // Returns a random point in the square surrounding a pixel at the

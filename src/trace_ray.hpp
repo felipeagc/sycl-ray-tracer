@@ -11,12 +11,12 @@ namespace raytracer {
 static inline std::optional<sycl::float3> trace_ray(
     const RenderContext &ctx,
     XorShift32State &rng,
-    RTCRay &ray,
+    RayData &ray,
     sycl::float3 &attenuation,
     sycl::float3 &radiance
 ) {
     RTCRayHit rayhit;
-    rayhit.ray = ray;
+    rayhit.ray = ray.to_embree();
     rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
     rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
     rtcIntersect1(ctx.scene, &rayhit);
@@ -68,9 +68,6 @@ static inline std::optional<sycl::float3> trace_ray(
         ray.org_x = rayhit.ray.org_x + rayhit.ray.dir_x * rayhit.ray.tfar;
         ray.org_z = rayhit.ray.org_z + rayhit.ray.dir_z * rayhit.ray.tfar;
         ray.org_y = rayhit.ray.org_y + rayhit.ray.dir_y * rayhit.ray.tfar;
-
-        ray.tnear = 0.0001f;
-        ray.tfar = std::numeric_limits<float>::infinity();
 
         ray.dir_x = result.dir.x();
         ray.dir_y = result.dir.y();

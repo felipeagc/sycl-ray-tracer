@@ -114,15 +114,9 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t samp
 
                 ScopedRng rng(pixel_coords, img_size, rng_buffer);
 
-                RTCRay ray = camera.get_ray(pixel_coords, rng);
-
+                RayData ray = camera.get_ray(pixel_coords, rng);
                 uint32_t ray_index = produced_rays_ref.fetch_add(1);
-                RayData ray_data = {
-                    .ray = ray,
-                    .attenuation = float3(1.0f),
-                    .radiance = float3(0.0f),
-                };
-                ray_buffer[ray_index] = ray_data;
+                ray_buffer[ray_index] = ray;
             });
         })
         .wait();
@@ -143,7 +137,7 @@ void WavefrontRenderer::shoot_rays(
 
             // Group size / range
 
-            range<1> local_size = 256;
+            range<1> local_size = 32;
             range<1> n_groups = ((prev_ray_count + local_size - 1) / local_size);
             sycl::nd_range<1> for_range(n_groups * local_size, local_size);
 
@@ -214,14 +208,23 @@ void WavefrontRenderer::shoot_rays(
                     RayData ray_data = prev_ray_buffer[global_id];
 
                     sycl::int2 pixel_coords = {
-                        ray_data.ray.id % ctx.camera.img_size[0],
-                        ray_data.ray.id / ctx.camera.img_size[0]};
+                        ray_data.id % ctx.camera.img_size[0],
+                        ray_data.id / ctx.camera.img_size[0]};
 
                     ScopedRng rng(pixel_coords, img_size, rng_buffer);
 
-                    auto res = trace_ray(
-                        ctx, rng, ray_data.ray, ray_data.attenuation, ray_data.radiance
-                    );
+                    float3 attenuation =
+                        float3(ray_data.att_r, ray_data.att_g, ray_data.att_b);
+                    float3 radiance =
+                        float3(ray_data.rad_r, ray_data.rad_g, ray_data.rad_b);
+                    auto res = trace_ray(ctx, rng, ray_data, attenuation, radiance);
+                    ray_data.att_r = attenuation.x();
+                    ray_data.att_g = attenuation.y();
+                    ray_data.att_b = attenuation.z();
+
+                    ray_data.rad_r = radiance.x();
+                    ray_data.rad_g = radiance.y();
+                    ray_data.rad_b = radiance.z();
 
                     if (res) {
                         // Final value is computed. Write to image.
