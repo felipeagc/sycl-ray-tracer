@@ -96,7 +96,9 @@ void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) 
                 sycl::filtering_mode::nearest
             ),
             .image_reader = ImageReadAccessor(scene.image_array.value(), cgh),
+#if USE_STREAMS
             .os = os,
+#endif
         };
 
         const auto img_size = this->img_size;

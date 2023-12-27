@@ -8,10 +8,13 @@ namespace raytracer {
 static uint32_t ZERO = 0;
 
 struct Buffers {
-    sycl::buffer<uint32_t> ray_buffer_length;
+    uint32_t *ray_buffer_length;
     RayData *ray_buffer;
 
-    Buffers(App &app, sycl::range<2> img_size) : ray_buffer_length(&ZERO, 1) {
+    Buffers(App &app, sycl::range<2> img_size) {
+        this->ray_buffer_length = (uint32_t *)sycl::aligned_alloc_shared(
+            alignof(uint32_t), sizeof(uint32_t), app.queue
+        );
         this->ray_buffer = (RayData *)sycl::aligned_alloc_device(
             alignof(RayData), sizeof(RayData) * img_size.size(), app.queue
         );
