@@ -122,12 +122,26 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t samp
         .wait();
 }
 
+static void print_elapsed(
+    const std::chrono::high_resolution_clock::time_point &begin, const char *phase_name
+) {
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+    double msecs = elapsed.count() * 1e-6;
+
+    fmt::println("\tPhase {}: {:.6f}ms", phase_name, msecs);
+}
+
 void WavefrontRenderer::shoot_rays(
     const Camera &camera, const Scene &scene, uint32_t depth
 ) {
+    auto begin = std::chrono::high_resolution_clock::now();
+
     uint32_t prev_ray_count = this->prev_buffer().ray_buffer_length.get_host_access()[0];
     fmt::println("Shooting {} rays", prev_ray_count);
     this->prev_buffer().ray_buffer_length.get_host_access()[0] = 0;
+
+    print_elapsed(begin, "reset ray count");
 
     app.queue
         .submit([&](sycl::handler &cgh) {
@@ -182,6 +196,7 @@ void WavefrontRenderer::shoot_rays(
             const range<2> img_size = this->img_size;
             XorShift32State *rng_buffer = this->rng_buffer;
 
+            print_elapsed(begin, "parallel_for begin");
             cgh.parallel_for(for_range, [=](sycl::nd_item<1> id) {
                 sycl::atomic_ref<
                     uint32_t,
@@ -242,6 +257,8 @@ void WavefrontRenderer::shoot_rays(
                 id.barrier(sycl::access::fence_space::local_space);
 
                 if (local_id == 0) {
+                    // ctx.os << "Local ray count " << global_id << ": "
+                    //        << local_ray_count_accessor[0] << sycl::endl;
                     local_first_ray_index_accessor[0] =
                         global_ray_count.fetch_add(local_ray_count_accessor[0]);
                 }
@@ -255,6 +272,8 @@ void WavefrontRenderer::shoot_rays(
             });
         })
         .wait();
+
+    print_elapsed(begin, "shoot end");
 }
 
 void WavefrontRenderer::merge_samples(uint32_t sample) {
