@@ -89,24 +89,23 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t samp
             auto image_writer =
                 this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
 
+            sycl::local_accessor<uint32_t, 1> local_ray_count_accessor(
+                sycl::range<1>(1), cgh
+            );
+
             // Params
             auto img_size = this->img_size;
             auto ray_buffer = this->current_buffer().ray_buffer;
-            uint32_t *global_ray_count = this->current_buffer().ray_buffer_length;
             auto rng_buffer = this->rng_buffer;
+
+            // Set produced ray count
+            *this->current_buffer().ray_buffer_length = img_size.size();
 
             cgh.parallel_for(for_range, [=](sycl::nd_item<2> id) {
                 auto global_id = id.get_global_id();
                 if (global_id[0] >= img_size[0] || global_id[1] >= img_size[1]) {
                     return;
                 }
-
-                sycl::atomic_ref<
-                    uint32_t,
-                    sycl::memory_order_relaxed,
-                    sycl::memory_scope_device,
-                    sycl::access::address_space::global_space>
-                    global_ray_count_ref(*global_ray_count);
 
                 int2 pixel_coords = {global_id[0], global_id[1]};
 
@@ -115,8 +114,7 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t samp
                 ScopedRng rng(pixel_coords, img_size, rng_buffer);
 
                 RayData ray = camera.get_ray(pixel_coords, rng);
-                uint32_t ray_index = global_ray_count_ref.fetch_add(1);
-                ray_buffer[ray_index] = ray;
+                ray_buffer[ray.id] = ray;
             });
         })
         .wait();
@@ -150,7 +148,7 @@ void WavefrontRenderer::shoot_rays(
             }
 
             // Group size / range
-            range<1> local_size = 32;
+            range<1> local_size = 16;
             range<1> n_groups = ((prev_ray_count + local_size - 1) / local_size);
             sycl::nd_range<1> for_range(n_groups * local_size, local_size);
 
@@ -252,8 +250,6 @@ void WavefrontRenderer::shoot_rays(
                 id.barrier(sycl::access::fence_space::local_space);
 
                 if (local_id == 0) {
-                    // ctx.os << "Local ray count " << global_id << ": "
-                    //        << local_ray_count_accessor[0] << sycl::endl;
                     local_first_ray_index_accessor[0] =
                         global_ray_count_ref.fetch_add(local_ray_count_accessor[0]);
                 }
@@ -274,6 +270,14 @@ void WavefrontRenderer::shoot_rays(
 void WavefrontRenderer::merge_samples(uint32_t sample) {
     app.queue
         .submit([&](sycl::handler &cgh) {
+            // Group size / range
+            range<2> local_size{8, 8};
+            range<2> n_groups = {
+                ((img_size[0] + local_size[0] - 1) / local_size[0]),
+                ((img_size[1] + local_size[1] - 1) / local_size[1]),
+            };
+
+            // Accessors
             auto image_reader =
                 this->image.get_access<float4, sycl::access::mode::read>(cgh);
             auto combined_image_reader =
@@ -281,12 +285,7 @@ void WavefrontRenderer::merge_samples(uint32_t sample) {
             auto combined_image_writer =
                 this->combined_image.get_access<float4, sycl::access::mode::write>(cgh);
 
-            range<2> local_size{16, 16};
-            range<2> n_groups = {
-                ((img_size[0] + local_size[0] - 1) / local_size[0]),
-                ((img_size[1] + local_size[1] - 1) / local_size[1]),
-            };
-
+            // Params
             const auto img_size = this->img_size;
 
             cgh.parallel_for(
@@ -300,11 +299,7 @@ void WavefrontRenderer::merge_samples(uint32_t sample) {
                     int2 pixel_coords = {global_id[0], global_id[1]};
 
                     float4 img_val = image_reader.read(pixel_coords);
-
                     float4 combined_val = combined_image_reader.read(pixel_coords);
-
-                    // float4 final_value =
-                    //     sycl::mix(output_val, img_val, 1.0f / ((float)sample + 1.0f));
 
                     combined_image_writer.write(pixel_coords, combined_val + img_val);
                 }
@@ -321,7 +316,7 @@ void WavefrontRenderer::convert_image_to_srgb() {
             auto output_image_writer =
                 this->output_image.get_access<float4, sycl::access::mode::write>(cgh);
 
-            range<2> local_size{16, 16};
+            range<2> local_size{8, 8};
             range<2> n_groups = {
                 ((img_size[0] + local_size[0] - 1) / local_size[0]),
                 ((img_size[1] + local_size[1] - 1) / local_size[1]),

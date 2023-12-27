@@ -18,21 +18,32 @@ TODO:
 - [x] Avoid that global atomic (probably biggest bottleneck)
       Use group shared memory for storing produced rays and then combine them later.
 
-- [ ] Avoid global atomic in generate_camera_rays
+- [x] Avoid global atomic in generate_camera_rays
 
 ## Performance log
 
 ### Sponza scene
 
-Megakernel (d=10, s=32):
-- 2023-12-26 19:00 - 1.11s - 545M rays/s
-- 2023-12-27 14:33 - Ray data compaction? - 1.01s - 599.89M rays/s
+- Params: (d=10, s=32)
+    Megakernel:
+    - 2023-12-26 19:00 - 1.11s - 545M rays/s
+    - 2023-12-27 14:33 - Ray data compaction? - 1.01s - 599.89M rays/s
 
-Wavefront (d=10, s=32):
-- 2023-12-26 19:00 - Initial implementation - 32.89s - 18.57M rays/s
-- 2023-12-26 22:19 - RNG buffer - 33.26s - 18.36M rays/s
-- 2023-12-27 14:33 - Stop passing sycl::stream to kernel - 1.93s - 315.43M rays/s
-- 2023-12-27 14:33 - Decrease shoot_rays group size from 512 to 32 - 1.57s - 388.18M rays/s
+    Wavefront:
+    - 2023-12-26 19:00 - Initial implementation - 32.89s - 18.57M rays/s
+    - 2023-12-26 22:19 - RNG buffer - 33.26s - 18.36M rays/s
+    - 2023-12-27 14:33 - Stop passing sycl::stream to kernel - 1.93s - 315.43M rays/s
+    - 2023-12-27 14:40 - Decrease shoot_rays group size from 512 to 32 - 1.57s - 388.18M rays/s
+    - 2023-12-27 14:52 - Remove global atomic from generate_camera_rays - 1.56s - 390.85M rays/s
+    - 2023-12-27 15:03 - Decrease shoot_rays group size from 32 to 16 - 1.43s - 427.37M rays/s
+
+- Params: (d=20, s=256)
+    Megakernel:
+    - 2023-12-27 14:52 - 15.48s - 18.03M rays/s
+
+    Wavefront:
+    - 2023-12-27 14:52 - 23.26s - 12.01M rays/s
+    - 2023-12-27 15:03 - 20.54s - 13.60M rays/s
 
 ## Wavefront raytracing
 
