@@ -141,17 +141,34 @@ void WavefrontRenderer::shoot_rays(
                 return;
             }
 
-            range<1> local_size = 32;
+            // Group size / range
+
+            range<1> local_size = 256;
             range<1> n_groups = ((prev_ray_count + local_size - 1) / local_size);
             sycl::nd_range<1> for_range(n_groups * local_size, local_size);
 
-            auto produced_rays_acc =
+            // Accessors
+
+            sycl::local_accessor<uint32_t, 1> local_ray_count_accessor(
+                sycl::range<1>(1), cgh
+            );
+
+            sycl::local_accessor<uint32_t, 1> local_first_ray_index_accessor(
+                sycl::range<1>(1), cgh
+            );
+
+            sycl::local_accessor<RayData, 1> local_ray_data(
+                sycl::range<1>(local_size), cgh
+            );
+
+            auto global_ray_count_accessor =
                 this->current_buffer()
                     .ray_buffer_length.get_access<sycl::access_mode::read_write>(cgh);
-            auto image_reader =
-                this->image.get_access<float4, sycl::access::mode::read>(cgh);
+
             auto image_writer =
                 this->image.get_access<float4, sycl::access::mode::write>(cgh);
+
+            // Params
 
             RenderContext ctx = {
                 .camera = camera,
@@ -165,7 +182,6 @@ void WavefrontRenderer::shoot_rays(
                 .image_reader = ImageReadAccessor(scene.image_array.value(), cgh),
                 .os = sycl::stream(8192, 256, cgh),
             };
-
             const auto prev_ray_buffer = this->prev_buffer().ray_buffer;
             const auto new_ray_buffer = this->current_buffer().ray_buffer;
             const uint32_t max_depth = this->max_depth;
@@ -173,54 +189,66 @@ void WavefrontRenderer::shoot_rays(
             XorShift32State *rng_buffer = this->rng_buffer;
 
             cgh.parallel_for(for_range, [=](sycl::nd_item<1> id) {
-                auto global_id = id.get_global_id();
-                if (global_id >= prev_ray_count) {
-                    return;
-                }
-
                 sycl::atomic_ref<
                     uint32_t,
                     sycl::memory_order_relaxed,
                     sycl::memory_scope_device,
                     sycl::access::address_space::global_space>
-                    produced_rays_acc_ref(produced_rays_acc[0]);
+                    global_ray_count(global_ray_count_accessor[0]);
 
-                RayData ray_data = prev_ray_buffer[global_id];
+                sycl::atomic_ref<
+                    uint32_t,
+                    sycl::memory_order_relaxed,
+                    sycl::memory_scope_device,
+                    sycl::access::address_space::local_space>
+                    local_ray_count(local_ray_count_accessor[0]);
 
-                sycl::int2 pixel_coords = {
-                    ray_data.ray.id % ctx.camera.img_size[0],
-                    ray_data.ray.id / ctx.camera.img_size[0]};
+                auto global_id = id.get_global_id();
+                auto local_id = id.get_local_id();
 
-                ScopedRng rng(pixel_coords, img_size, rng_buffer);
+                local_ray_count_accessor[0] = 0;
 
-                auto res = trace_ray(
-                    ctx, rng, ray_data.ray, ray_data.attenuation, ray_data.radiance
-                );
+                id.barrier(sycl::access::fence_space::local_space);
 
-                if (res) {
-                    // Final value is computed. Write to image.
-                    float4 final_color = float4(sycl::clamp(*res, 0.0f, 1.0f), 1.0f);
+                if (global_id < prev_ray_count) {
+                    RayData ray_data = prev_ray_buffer[global_id];
 
-                    float4 prev_value = image_reader.read(pixel_coords);
-                    // float4 final_value =
-                    //     sycl::mix(prev_value, final_color, 1.0f / ((float)depth
-                    //     + 1.0f));
+                    sycl::int2 pixel_coords = {
+                        ray_data.ray.id % ctx.camera.img_size[0],
+                        ray_data.ray.id / ctx.camera.img_size[0]};
 
-                    float4 final_value = final_color;
+                    ScopedRng rng(pixel_coords, img_size, rng_buffer);
 
-                    image_writer.write(pixel_coords, final_value);
+                    auto res = trace_ray(
+                        ctx, rng, ray_data.ray, ray_data.attenuation, ray_data.radiance
+                    );
 
-                    return;
+                    if (res) {
+                        // Final value is computed. Write to image.
+                        float4 final_color = float4(sycl::clamp(*res, 0.0f, 1.0f), 1.0f);
+                        image_writer.write(pixel_coords, final_color);
+                    } else if (depth == (max_depth - 1)) {
+                        image_writer.write(pixel_coords, float4(0.0f, 0.0f, 0.0f, 1.0f));
+                    } else {
+                        // New ray was generated
+                        uint32_t ray_index = local_ray_count.fetch_add(1);
+                        local_ray_data[ray_index] = ray_data;
+                    }
                 }
 
-                if (depth == (max_depth - 1)) {
-                    image_writer.write(pixel_coords, float4(0.0f, 0.0f, 0.0f, 1.0f));
-                    return;
+                id.barrier(sycl::access::fence_space::local_space);
+
+                if (local_id == 0) {
+                    local_first_ray_index_accessor[0] =
+                        global_ray_count.fetch_add(local_ray_count_accessor[0]);
                 }
 
-                // New ray was generated
-                uint32_t ray_index = produced_rays_acc_ref.fetch_add(1);
-                new_ray_buffer[ray_index] = ray_data;
+                id.barrier(sycl::access::fence_space::local_space);
+
+                if (local_id < local_ray_count_accessor[0]) {
+                    new_ray_buffer[local_first_ray_index_accessor[0] + local_id] =
+                        local_ray_data[local_id];
+                }
             });
         })
         .wait();
