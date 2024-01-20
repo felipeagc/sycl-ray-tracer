@@ -35,6 +35,7 @@ TODO:
     - 2023-12-26 19:00 - 1.11s - 545M rays/s
     - 2023-12-27 14:33 - Ray data compaction? - 1.01s - 599.89M rays/s
     - 2023-12-27 16:29 - ??? - 0.96s - 634.38M rays/s
+    - 2024-01-20 14:05 - Back from vacation - 0.91s - 665.08M rays/s
 
     Wavefront:
     - 2023-12-26 19:00 - Initial implementation - 32.89s - 18.57M rays/s
@@ -43,6 +44,7 @@ TODO:
     - 2023-12-27 14:40 - Decrease shoot_rays group size from 512 to 32 - 1.57s - 388.18M rays/s
     - 2023-12-27 14:52 - Remove global atomic from generate_camera_rays - 1.56s - 390.85M rays/s
     - 2023-12-27 15:03 - Decrease shoot_rays group size from 32 to 16 - 1.43s - 427.37M rays/s
+    - 2024-01-20 14:05 - Back from vacation - 1.36s - 447.65M rays/s
 
 - Params: (d=20, s=256)
     Megakernel:
