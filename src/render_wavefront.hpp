@@ -9,14 +9,30 @@ static uint32_t ZERO = 0;
 
 struct Buffers {
     uint32_t *ray_buffer_length;
-    RayData *ray_buffer;
+    uint32_t *ray_ids;
+    sycl::float3 *ray_origins;
+    sycl::half3 *ray_directions;
+    sycl::half3 *ray_attenuations;
+    sycl::half3 *ray_radiances;
 
     Buffers(App &app, sycl::range<2> img_size) {
         this->ray_buffer_length = (uint32_t *)sycl::aligned_alloc_shared(
             alignof(uint32_t), sizeof(uint32_t), app.queue
         );
-        this->ray_buffer = (RayData *)sycl::aligned_alloc_device(
-            alignof(RayData), sizeof(RayData) * img_size.size(), app.queue
+        this->ray_ids = (uint32_t *)sycl::aligned_alloc_device(
+            alignof(uint32_t), sizeof(uint32_t) * img_size.size(), app.queue
+        );
+        this->ray_origins = (sycl::float3 *)sycl::aligned_alloc_device(
+            alignof(sycl::float3), sizeof(sycl::float3) * img_size.size(), app.queue
+        );
+        this->ray_directions = (sycl::half3 *)sycl::aligned_alloc_device(
+            alignof(sycl::half3), sizeof(sycl::half3) * img_size.size(), app.queue
+        );
+        this->ray_attenuations = (sycl::half3 *)sycl::aligned_alloc_device(
+            alignof(sycl::half3), sizeof(sycl::half3) * img_size.size(), app.queue
+        );
+        this->ray_radiances = (sycl::half3 *)sycl::aligned_alloc_device(
+            alignof(sycl::half3), sizeof(sycl::half3) * img_size.size(), app.queue
         );
     }
 };

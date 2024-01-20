@@ -7,6 +7,8 @@ using namespace raytracer;
 using sycl::float2;
 using sycl::float3;
 using sycl::float4;
+using sycl::half;
+using sycl::half3;
 using sycl::int2;
 using sycl::range;
 
@@ -95,8 +97,12 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t samp
 
             // Params
             auto img_size = this->img_size;
-            auto ray_buffer = this->current_buffer().ray_buffer;
             auto rng_buffer = this->rng_buffer;
+            auto ray_ids = this->current_buffer().ray_ids;
+            auto ray_origins = this->current_buffer().ray_origins;
+            auto ray_directions = this->current_buffer().ray_directions;
+            auto ray_attenuations = this->current_buffer().ray_attenuations;
+            auto ray_radiances = this->current_buffer().ray_radiances;
 
             // Set produced ray count
             *this->current_buffer().ray_buffer_length = img_size.size();
@@ -114,7 +120,11 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t samp
                 ScopedRng rng(pixel_coords, img_size, rng_buffer);
 
                 RayData ray = camera.get_ray(pixel_coords, rng);
-                ray_buffer[ray.id] = ray;
+                ray_ids[ray.id] = ray.id;
+                ray_origins[ray.id] = sycl::float3(ray.org_x, ray.org_y, ray.org_z);
+                ray_directions[ray.id] = sycl::half3(ray.dir_x, ray.dir_y, ray.dir_z);
+                ray_attenuations[ray.id] = sycl::half3(ray.att_r, ray.att_g, ray.att_b);
+                ray_radiances[ray.id] = sycl::half3(ray.rad_r, ray.rad_g, ray.rad_b);
             });
         })
         .wait();
@@ -159,9 +169,23 @@ void WavefrontRenderer::shoot_rays(
             sycl::local_accessor<uint32_t, 1> local_first_ray_index_accessor(
                 sycl::range<1>(1), cgh
             );
-            sycl::local_accessor<RayData, 1> local_ray_data(
+
+            sycl::local_accessor<uint32_t, 1> local_ray_ids(
                 sycl::range<1>(local_size), cgh
             );
+            sycl::local_accessor<float3, 1> local_ray_origins(
+                sycl::range<1>(local_size), cgh
+            );
+            sycl::local_accessor<half3, 1> local_ray_directions(
+                sycl::range<1>(local_size), cgh
+            );
+            sycl::local_accessor<half3, 1> local_ray_attenuations(
+                sycl::range<1>(local_size), cgh
+            );
+            sycl::local_accessor<half3, 1> local_ray_radiances(
+                sycl::range<1>(local_size), cgh
+            );
+
             auto image_writer =
                 this->image.get_access<float4, sycl::access::mode::write>(cgh);
 
@@ -180,9 +204,18 @@ void WavefrontRenderer::shoot_rays(
                 .os = sycl::stream(8192, 256, cgh),
 #endif
             };
-            const auto prev_ray_buffer = this->prev_buffer().ray_buffer;
+            const auto prev_ray_ids = this->prev_buffer().ray_ids;
+            const auto prev_ray_origins = this->prev_buffer().ray_origins;
+            const auto prev_ray_directions = this->prev_buffer().ray_directions;
+            const auto prev_ray_attenuations = this->prev_buffer().ray_attenuations;
+            const auto prev_ray_radiances = this->prev_buffer().ray_radiances;
 
-            const auto new_ray_buffer = this->current_buffer().ray_buffer;
+            const auto new_ray_ids = this->current_buffer().ray_ids;
+            const auto new_ray_origins = this->current_buffer().ray_origins;
+            const auto new_ray_directions = this->current_buffer().ray_directions;
+            const auto new_ray_attenuations = this->current_buffer().ray_attenuations;
+            const auto new_ray_radiances = this->current_buffer().ray_radiances;
+
             uint32_t *global_ray_count = this->current_buffer().ray_buffer_length;
 
             const uint32_t max_depth = this->max_depth;
@@ -213,26 +246,35 @@ void WavefrontRenderer::shoot_rays(
                 id.barrier(sycl::access::fence_space::local_space);
 
                 if (global_id < prev_ray_count) {
-                    RayData ray_data = prev_ray_buffer[global_id];
+                    uint32_t ray_id = prev_ray_ids[global_id];
+                    float3 ray_origin = prev_ray_origins[global_id];
+                    float3 ray_direction =
+                        prev_ray_directions[global_id].convert<float>();
+                    float3 ray_attenuation =
+                        prev_ray_attenuations[global_id].convert<float>();
+                    float3 ray_radiance = prev_ray_radiances[global_id].convert<float>();
 
                     sycl::int2 pixel_coords = {
-                        ray_data.id % ctx.camera.img_size[0],
-                        ray_data.id / ctx.camera.img_size[0]};
+                        ray_id % ctx.camera.img_size[0], ray_id / ctx.camera.img_size[0]};
 
                     ScopedRng rng(pixel_coords, img_size, rng_buffer);
 
-                    float3 attenuation =
-                        float3(ray_data.att_r, ray_data.att_g, ray_data.att_b);
-                    float3 radiance =
-                        float3(ray_data.rad_r, ray_data.rad_g, ray_data.rad_b);
-                    auto res = trace_ray(ctx, rng, ray_data, attenuation, radiance);
-                    ray_data.att_r = attenuation.x();
-                    ray_data.att_g = attenuation.y();
-                    ray_data.att_b = attenuation.z();
+                    RTCRay ray = {
+                        .org_x = ray_origin.x(),
+                        .org_y = ray_origin.y(),
+                        .org_z = ray_origin.z(),
+                        .tnear = 0.0001f,
+                        .dir_x = ray_direction.x(),
+                        .dir_y = ray_direction.y(),
+                        .dir_z = ray_direction.z(),
+                        .time = 0.0f,
+                        .tfar = std::numeric_limits<float>::infinity(),
+                        .mask = UINT32_MAX,
+                        .id = ray_id,
+                        .flags = 0,
+                    };
 
-                    ray_data.rad_r = radiance.x();
-                    ray_data.rad_g = radiance.y();
-                    ray_data.rad_b = radiance.z();
+                    auto res = trace_ray(ctx, rng, ray, ray_attenuation, ray_radiance);
 
                     if (res) {
                         // Final value is computed. Write to image.
@@ -243,7 +285,14 @@ void WavefrontRenderer::shoot_rays(
                     } else {
                         // New ray was generated
                         uint32_t ray_index = local_ray_count.fetch_add(1);
-                        local_ray_data[ray_index] = ray_data;
+                        local_ray_ids[ray_index] = ray_id;
+                        local_ray_origins[ray_index] =
+                            float3(ray.org_x, ray.org_y, ray.org_z);
+                        local_ray_directions[ray_index] =
+                            half3(ray.dir_x, ray.dir_y, ray.dir_z);
+                        local_ray_attenuations[ray_index] =
+                            ray_attenuation.convert<half>();
+                        local_ray_radiances[ray_index] = ray_radiance.convert<half>();
                     }
                 }
 
@@ -257,8 +306,12 @@ void WavefrontRenderer::shoot_rays(
                 id.barrier(sycl::access::fence_space::local_space);
 
                 if (local_id < local_ray_count_accessor[0]) {
-                    new_ray_buffer[local_first_ray_index_accessor[0] + local_id] =
-                        local_ray_data[local_id];
+                    const size_t i = local_first_ray_index_accessor[0] + local_id;
+                    new_ray_ids[i] = local_ray_ids[local_id];
+                    new_ray_origins[i] = local_ray_origins[local_id];
+                    new_ray_directions[i] = local_ray_directions[local_id];
+                    new_ray_attenuations[i] = local_ray_attenuations[local_id];
+                    new_ray_radiances[i] = local_ray_radiances[local_id];
                 }
             });
         })

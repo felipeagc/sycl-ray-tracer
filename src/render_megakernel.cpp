@@ -39,7 +39,18 @@ static float3 render_pixel(
         float3 radiance =
             float3(ray_data.rad_r, ray_data.rad_g, ray_data.rad_b);
 
-        auto res = trace_ray(ctx, rng, ray_data, attenuation, radiance);
+        auto ray = ray_data.to_embree();
+
+        auto res = trace_ray(ctx, rng, ray, attenuation, radiance);
+
+        ray_data.org_x = ray.org_x;
+        ray_data.org_y = ray.org_y;
+        ray_data.org_z = ray.org_z;
+
+        ray_data.dir_x = ray.dir_x;
+        ray_data.dir_y = ray.dir_y;
+        ray_data.dir_z = ray.dir_z;
+
         ray_data.att_r = attenuation.x();
         ray_data.att_g = attenuation.y();
         ray_data.att_b = attenuation.z();

@@ -11,12 +11,12 @@ namespace raytracer {
 static inline std::optional<sycl::float3> trace_ray(
     const RenderContext &ctx,
     XorShift32State &rng,
-    RayData &ray,
+    RTCRay &ray,
     sycl::float3 &attenuation,
     sycl::float3 &radiance
 ) {
     RTCRayHit rayhit;
-    rayhit.ray = ray.to_embree();
+    rayhit.ray = ray;
     rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
     rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
     rtcIntersect1(ctx.scene, &rayhit);
