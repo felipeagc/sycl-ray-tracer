@@ -1,4 +1,8 @@
-# Parallel Computing Final Project
+# SYCL Ray Tracer
+
+Implementation of a GPU-based ray tracer using SYCL and Embree using both megakernel and wavefront approaches.
+
+![sponza](https://github.com/felipeagc/sycl-ray-tracer/assets/17355488/22a49ad9-f63f-48ba-84ab-fa4d2b7e595e)
 
 ## Intel oneAPI install on Debian
 
