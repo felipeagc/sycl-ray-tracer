@@ -91,10 +91,6 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera, uint32_t samp
             auto image_writer =
                 this->image.get_access<sycl::float4, sycl::access::mode::write>(cgh);
 
-            sycl::local_accessor<uint32_t, 1> local_ray_count_accessor(
-                sycl::range<1>(1), cgh
-            );
-
             // Params
             auto img_size = this->img_size;
             auto rng_buffer = this->rng_buffer;
@@ -166,7 +162,7 @@ void WavefrontRenderer::shoot_rays(
             sycl::local_accessor<uint32_t, 1> local_ray_count_accessor(
                 sycl::range<1>(1), cgh
             );
-            sycl::local_accessor<uint32_t, 1> local_first_ray_index_accessor(
+            sycl::local_accessor<uint64_t, 1> local_first_ray_index_accessor(
                 sycl::range<1>(1), cgh
             );
 
@@ -216,7 +212,7 @@ void WavefrontRenderer::shoot_rays(
             const auto new_ray_attenuations = this->current_buffer().ray_attenuations;
             const auto new_ray_radiances = this->current_buffer().ray_radiances;
 
-            uint32_t *global_ray_count = this->current_buffer().ray_buffer_length;
+            uint64_t *global_ray_count = this->current_buffer().ray_buffer_length;
 
             const uint32_t max_depth = this->max_depth;
             const range<2> img_size = this->img_size;
@@ -225,7 +221,7 @@ void WavefrontRenderer::shoot_rays(
             // print_elapsed(begin, "parallel_for begin");
             cgh.parallel_for(for_range, [=](sycl::nd_item<1> id) {
                 sycl::atomic_ref<
-                    uint32_t,
+                    uint64_t,
                     sycl::memory_order_relaxed,
                     sycl::memory_scope_device,
                     sycl::access::address_space::global_space>
@@ -236,12 +232,12 @@ void WavefrontRenderer::shoot_rays(
                     sycl::memory_order_relaxed,
                     sycl::memory_scope_device,
                     sycl::access::address_space::local_space>
-                    local_ray_count(local_ray_count_accessor[0]);
+                    local_ray_count_ref(local_ray_count_accessor[0]);
 
                 auto global_id = id.get_global_id();
                 auto local_id = id.get_local_id();
 
-                local_ray_count_accessor[0] = 0;
+                local_ray_count_ref = 0;
 
                 id.barrier(sycl::access::fence_space::local_space);
 
@@ -284,7 +280,7 @@ void WavefrontRenderer::shoot_rays(
                         image_writer.write(pixel_coords, float4(0.0f, 0.0f, 0.0f, 1.0f));
                     } else {
                         // New ray was generated
-                        uint32_t ray_index = local_ray_count.fetch_add(1);
+                        uint32_t ray_index = local_ray_count_ref.fetch_add(1);
                         local_ray_ids[ray_index] = ray_id;
                         local_ray_origins[ray_index] =
                             float3(ray.org_x, ray.org_y, ray.org_z);
@@ -300,13 +296,13 @@ void WavefrontRenderer::shoot_rays(
 
                 if (local_id == 0) {
                     local_first_ray_index_accessor[0] =
-                        global_ray_count_ref.fetch_add(local_ray_count_accessor[0]);
+                        global_ray_count_ref.fetch_add(local_ray_count_ref);
                 }
 
                 id.barrier(sycl::access::fence_space::local_space);
 
-                if (local_id < local_ray_count_accessor[0]) {
-                    const size_t i = local_first_ray_index_accessor[0] + local_id;
+                if (local_id < local_ray_count_ref) {
+                    const uint64_t i = local_first_ray_index_accessor[0] + local_id;
                     new_ray_ids[i] = local_ray_ids[local_id];
                     new_ray_origins[i] = local_ray_origins[local_id];
                     new_ray_directions[i] = local_ray_directions[local_id];
@@ -400,7 +396,7 @@ void WavefrontRenderer::convert_image_to_srgb() {
 void WavefrontRenderer::render_frame(const Camera &camera, const Scene &scene) {
     auto begin = std::chrono::high_resolution_clock::now();
 
-    uint32_t total_ray_count = 0;
+    uint64_t total_ray_count = 0;
 
     for (uint32_t sample = 0; sample < this->sample_count; sample++) {
         fmt::println("Sample {}", sample);

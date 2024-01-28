@@ -17,9 +17,6 @@ using sycl::float4;
 using sycl::int2;
 using sycl::range;
 
-constexpr sycl::specialization_id<uint32_t> max_depth_spec_id;
-constexpr sycl::specialization_id<uint32_t> sample_count_spec_id;
-
 static float3 render_pixel(
     const RenderContext &ctx,
     XorShift32State &rng,
@@ -34,10 +31,8 @@ static float3 render_pixel(
     for (uint32_t i = 0; i < max_depth; ++i) {
         ray_count++;
 
-        float3 attenuation =
-            float3(ray_data.att_r, ray_data.att_g, ray_data.att_b);
-        float3 radiance =
-            float3(ray_data.rad_r, ray_data.rad_g, ray_data.rad_b);
+        float3 attenuation = float3(ray_data.att_r, ray_data.att_g, ray_data.att_b);
+        float3 radiance = float3(ray_data.rad_r, ray_data.rad_g, ray_data.rad_b);
 
         auto ray = ray_data.to_embree();
 
@@ -78,15 +73,15 @@ MegakernelRenderer::MegakernelRenderer(
       sample_count(sample_count) {}
 
 void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) {
-    uint32_t initial_ray_count = 0;
-    sycl::buffer<uint32_t> ray_count_buffer{&initial_ray_count, 1};
+    uint64_t initial_ray_count = 0;
+    sycl::buffer<uint64_t> ray_count_buffer{&initial_ray_count, 1};
 
     auto begin = std::chrono::high_resolution_clock::now();
 
-    auto e = app.queue.submit([&](sycl::handler &cgh) {
-        cgh.set_specialization_constant<max_depth_spec_id>(this->max_depth);
-        cgh.set_specialization_constant<sample_count_spec_id>(this->sample_count);
+    uint32_t max_depth = this->max_depth;
+    uint32_t sample_count = this->sample_count;
 
+    auto e = app.queue.submit([&](sycl::handler &cgh) {
         sycl::stream os(8192, 256, cgh);
 
         auto image_writer = image.get_access<float4, sycl::access::mode::write>(cgh);
@@ -114,6 +109,10 @@ void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) 
 
         const auto img_size = this->img_size;
 
+        sycl::local_accessor<uint32_t, 1> local_ray_count_accessor(
+            sycl::range<1>(1), cgh
+        );
+
         cgh.parallel_for(
             sycl::nd_range<2>(n_groups * local_size, local_size),
             [=](sycl::nd_item<2> id, sycl::kernel_handler h) {
@@ -122,18 +121,25 @@ void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) 
                     return;
                 }
 
-                uint32_t max_depth = h.get_specialization_constant<max_depth_spec_id>();
-                uint32_t sample_count =
-                    h.get_specialization_constant<sample_count_spec_id>();
-
-                int2 pixel_coords = {global_id[0], global_id[1]};
+                sycl::atomic_ref<
+                    uint64_t,
+                    sycl::memory_order_relaxed,
+                    sycl::memory_scope_device,
+                    sycl::access::address_space::global_space>
+                    global_ray_count_ref(ray_count[0]);
 
                 sycl::atomic_ref<
                     uint32_t,
                     sycl::memory_order_relaxed,
                     sycl::memory_scope_device,
-                    sycl::access::address_space::global_space>
-                    ray_count_ref(ray_count[0]);
+                    sycl::access::address_space::local_space>
+                    local_ray_count_ref(local_ray_count_accessor[0]);
+
+                if (id.get_local_linear_id() == 0) {
+                    local_ray_count_ref = 0;
+                }
+
+                int2 pixel_coords = {global_id[0], global_id[1]};
 
                 auto init_generator_state =
                     std::hash<std::size_t>{}(id.get_global_linear_id());
@@ -151,7 +157,13 @@ void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) 
 
                 image_writer.write(pixel_coords, float4(pixel_color, 1.0f));
 
-                ray_count_ref.fetch_add(ray_count);
+                local_ray_count_ref += ray_count;
+
+                id.barrier(sycl::access::fence_space::local_space);
+
+                if (id.get_local_linear_id() == 0) {
+                    global_ray_count_ref += local_ray_count_ref;
+                }
             }
         );
     });
@@ -161,13 +173,13 @@ void MegakernelRenderer::render_frame(const Camera &camera, const Scene &scene) 
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
 
-    auto ray_count = ray_count_buffer.get_host_access();
+    uint64_t ray_count = ray_count_buffer.get_host_access()[0];
 
     double secs = elapsed.count() * 1e-9;
-    double rays_per_sec = (double)ray_count[0] / secs;
+    double rays_per_sec = (double)ray_count / secs;
 
     fmt::println("Time measured: {:.6f} seconds", secs);
-    fmt::println("Total rays: {}", ray_count[0]);
+    fmt::println("Total rays: {}", ray_count);
     fmt::println("Rays/sec: {:.2f}M", rays_per_sec / 1000000.0);
 
     fmt::println("Writing image to disk");
