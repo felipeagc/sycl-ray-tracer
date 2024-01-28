@@ -5,7 +5,20 @@
 
 namespace raytracer {
 
+static constexpr uint32_t SAMPLES_PER_RUN = 8;
 static uint32_t ZERO = 0;
+
+struct RunBuffers {
+    std::array<uint8_t, 4> *image_buffer;
+
+    RunBuffers(App &app, sycl::range<2> img_size) {
+        this->image_buffer = (std::array<uint8_t, 4> *)sycl::aligned_alloc_device(
+            alignof(sycl::float4),
+            sizeof(std::array<uint8_t, 4>) * img_size.size(),
+            app.queue
+        );
+    }
+};
 
 struct Buffers {
     uint64_t *ray_buffer_length;
@@ -16,23 +29,24 @@ struct Buffers {
     sycl::half3 *ray_radiances;
 
     Buffers(App &app, sycl::range<2> img_size) {
+        size_t buf_size = img_size.size() * SAMPLES_PER_RUN;
         this->ray_buffer_length = (uint64_t *)sycl::aligned_alloc_shared(
             alignof(uint64_t), sizeof(uint64_t), app.queue
         );
         this->ray_ids = (uint32_t *)sycl::aligned_alloc_device(
-            alignof(uint32_t), sizeof(uint32_t) * img_size.size(), app.queue
+            alignof(uint32_t), sizeof(uint32_t) * buf_size, app.queue
         );
         this->ray_origins = (sycl::float3 *)sycl::aligned_alloc_device(
-            alignof(sycl::float3), sizeof(sycl::float3) * img_size.size(), app.queue
+            alignof(sycl::float3), sizeof(sycl::float3) * buf_size, app.queue
         );
         this->ray_directions = (sycl::half3 *)sycl::aligned_alloc_device(
-            alignof(sycl::half3), sizeof(sycl::half3) * img_size.size(), app.queue
+            alignof(sycl::half3), sizeof(sycl::half3) * buf_size, app.queue
         );
         this->ray_attenuations = (sycl::half3 *)sycl::aligned_alloc_device(
-            alignof(sycl::half3), sizeof(sycl::half3) * img_size.size(), app.queue
+            alignof(sycl::half3), sizeof(sycl::half3) * buf_size, app.queue
         );
         this->ray_radiances = (sycl::half3 *)sycl::aligned_alloc_device(
-            alignof(sycl::half3), sizeof(sycl::half3) * img_size.size(), app.queue
+            alignof(sycl::half3), sizeof(sycl::half3) * buf_size, app.queue
         );
     }
 };
@@ -40,12 +54,12 @@ struct Buffers {
 struct WavefrontRenderer : public IRenderer {
     App &app;
     sycl::range<2> img_size;
-    sycl::image<2> image;
     sycl::image<2> combined_image;
     sycl::image<2> &output_image;
 
     uint32_t buffer_index = 0;
     std::array<Buffers, 2> buffers;
+    RunBuffers* run_buffers;
 
     XorShift32State *rng_buffer;
 
@@ -70,9 +84,9 @@ struct WavefrontRenderer : public IRenderer {
     }
 
   private:
-    void generate_camera_rays(const Camera &camera, uint32_t sample);
+    void generate_camera_rays(const Camera &camera);
     void shoot_rays(const Camera &camera, const Scene &scene, uint32_t depth);
-    void merge_samples(uint32_t sample);
+    void merge_samples();
     void convert_image_to_srgb();
 };
 } // namespace raytracer
