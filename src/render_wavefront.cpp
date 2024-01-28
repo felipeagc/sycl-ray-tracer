@@ -71,8 +71,6 @@ WavefrontRenderer::WavefrontRenderer(
 
             cgh.parallel_for(sycl::range<2>(img_size), [=](sycl::item<2> item) {
                 sycl::int2 pixel_coords(item[0], item[1]);
-                uint32_t pixel_linear_pos =
-                    pixel_coords[0] + (pixel_coords[1] * img_size[0]);
 
                 for (uint32_t i = 0; i < SAMPLES_PER_RUN; i++) {
                     color_buffer.write(i, pixel_coords, float4(0.0f, 0.0f, 0.0f, 1.0f));
@@ -80,6 +78,8 @@ WavefrontRenderer::WavefrontRenderer(
                 combined_image_writer.write(pixel_coords, sycl::float4(0.0f));
 
                 // Initialize RNG state
+                uint32_t pixel_linear_pos =
+                    pixel_coords[0] + (pixel_coords[1] * img_size[0]);
                 for (uint32_t i = 0; i < SAMPLES_PER_RUN; i++) {
                     uint32_t rng_index = pixel_linear_pos + i * img_size.size();
                     auto init_generator_state = std::hash<std::size_t>{}(rng_index);
@@ -134,12 +134,14 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera) {
                     ScopedRng rng(i, pixel_coords, img_size, rng_buffer);
 
                     RayData ray = camera.get_ray(pixel_coords, rng);
-                    ray_ids[ray.id] = ray.id + i * img_size.size();
-                    ray_origins[ray.id] = sycl::float3(ray.org_x, ray.org_y, ray.org_z);
-                    ray_directions[ray.id] = sycl::half3(ray.dir_x, ray.dir_y, ray.dir_z);
-                    ray_attenuations[ray.id] =
+                    uint32_t ray_id = ray.id + i * img_size.size();
+
+                    ray_ids[ray_id] = ray_id;
+                    ray_origins[ray_id] = sycl::float3(ray.org_x, ray.org_y, ray.org_z);
+                    ray_directions[ray_id] = sycl::half3(ray.dir_x, ray.dir_y, ray.dir_z);
+                    ray_attenuations[ray_id] =
                         sycl::half3(ray.att_r, ray.att_g, ray.att_b);
-                    ray_radiances[ray.id] = sycl::half3(ray.rad_r, ray.rad_g, ray.rad_b);
+                    ray_radiances[ray_id] = sycl::half3(ray.rad_r, ray.rad_g, ray.rad_b);
                 }
             });
         })
@@ -162,7 +164,6 @@ void WavefrontRenderer::shoot_rays(
     auto begin = std::chrono::high_resolution_clock::now();
 
     uint32_t prev_ray_count = *this->prev_buffer().ray_buffer_length;
-    // fmt::println("Shooting {} rays", prev_ray_count);
     *this->prev_buffer().ray_buffer_length = 0;
 
     // print_elapsed(begin, "reset ray count");
@@ -439,7 +440,7 @@ void WavefrontRenderer::render_frame(const Camera &camera, const Scene &scene) {
     uint64_t total_ray_count = 0;
 
     for (uint32_t sample = 0; sample < this->sample_count / SAMPLES_PER_RUN; sample++) {
-        fmt::println("Sample {}", sample);
+        fmt::println("Samples {} to {}", sample * SAMPLES_PER_RUN, (sample + 1) * SAMPLES_PER_RUN);
 
         this->generate_camera_rays(camera);
 
