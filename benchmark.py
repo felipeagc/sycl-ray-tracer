@@ -4,22 +4,28 @@ import re
 import itertools
 
 depth_samples = [
-    (10, 32),
-    (50, 32),
-    (100, 32),
-
-    (10, 64),
     (10, 128),
+    (20, 128),
+    (30, 128),
+    (40, 128),
+    (50, 128),
 ]
 scenes = ['./assets/sponza.glb', './assets/minecraft.glb']
 renderers = ['-m', '-w']
 
-with open('benchmark.csv', 'w') as f:
+with open('benchmark_raw.csv', 'w') as f:
+    f.write("renderer,depth,samples,scene,time,rays_per_sec,ray_count\n")
+
+with open('benchmark_avg.csv', 'w') as f:
     f.write("renderer,depth,samples,scene,time,rays_per_sec,ray_count\n")
 
 combinations = itertools.product(scenes, depth_samples, renderers)
 for (scene, (depth, samples), renderer) in combinations:
     print(f"Running benchmark for {renderer} with {samples} samples and {depth} depth")
+
+    rays_per_sec_total = 0
+    time_total = 0
+    ray_count_total = 0
 
     for i in range(6):
         print(f"Iteration {i}")
@@ -46,5 +52,12 @@ for (scene, (depth, samples), renderer) in combinations:
 
         print(f"({renderer}, {time}, {rays_per_sec}, {ray_count})")
 
-        with open('benchmark.csv', 'a') as f:
+        rays_per_sec_total += rays_per_sec
+        time_total += time
+        ray_count_total += ray_count
+
+        with open('benchmark_raw.csv', 'a') as f:
             f.write(f"{renderer},{depth},{samples},{scene},{time},{rays_per_sec},{ray_count}\n")
+
+    with open('benchmark_avg.csv', 'a') as f:
+        f.write(f"{renderer},{depth},{samples},{scene},{time_total/5},{rays_per_sec_total/5},{ray_count_total/5}\n")

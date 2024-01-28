@@ -54,14 +54,3 @@ add_sycl_to_target(
     TARGET raytracer
     SOURCES ${SYCL_SOURCES}
 )
-
-# Scratchpad
-
-add_executable(demo demo.cpp)
-target_compile_definitions(demo PUBLIC EMBREE_SYCL_SUPPORT)
-target_link_libraries(demo PRIVATE fmt embree)
-target_include_directories(demo PRIVATE src deps/include)
-add_sycl_to_target(
-    TARGET demo
-    SOURCES demo.cpp
-)
