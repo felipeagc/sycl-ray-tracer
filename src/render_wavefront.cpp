@@ -13,8 +13,14 @@ using sycl::int2;
 using sycl::range;
 
 struct ScopedRng {
-    ScopedRng(int2 pixel_coords, sycl::range<2> img_size, XorShift32State *rng_buffer) {
-        this->rng_ptr = &rng_buffer[pixel_coords[0] + (pixel_coords[1] * img_size[0])];
+    ScopedRng(
+        uint32_t run_index,
+        int2 pixel_coords,
+        sycl::range<2> img_size,
+        XorShift32State *rng_buffer
+    ) {
+        uint32_t pixel_id = pixel_coords[0] + (pixel_coords[1] * img_size[0]);
+        this->rng_ptr = &rng_buffer[pixel_id + run_index * img_size.size()];
         this->rng = *this->rng_ptr;
     }
 
@@ -46,7 +52,9 @@ WavefrontRenderer::WavefrontRenderer(
       color_buffer(app, img_size), output_image(output_image), max_depth(max_depth),
       sample_count(sample_count) {
     this->rng_buffer = (XorShift32State *)sycl::aligned_alloc_device(
-        alignof(XorShift32State), sizeof(XorShift32State) * img_size.size(), app.queue
+        alignof(XorShift32State),
+        sizeof(XorShift32State) * img_size.size() * SAMPLES_PER_RUN,
+        app.queue
     );
 
     app.queue
@@ -72,9 +80,12 @@ WavefrontRenderer::WavefrontRenderer(
                 combined_image_writer.write(pixel_coords, sycl::float4(0.0f));
 
                 // Initialize RNG state
-                auto init_generator_state = std::hash<std::size_t>{}(pixel_linear_pos);
-                rng_buffer[pixel_linear_pos] =
-                    XorShift32State{(uint32_t)init_generator_state};
+                for (uint32_t i = 0; i < SAMPLES_PER_RUN; i++) {
+                    uint32_t rng_index = pixel_linear_pos + i * img_size.size();
+                    auto init_generator_state = std::hash<std::size_t>{}(rng_index);
+                    rng_buffer[rng_index] =
+                        XorShift32State{(uint32_t)init_generator_state};
+                }
             });
         })
         .wait();
@@ -119,9 +130,9 @@ void WavefrontRenderer::generate_camera_rays(const Camera &camera) {
                     color_buffer.write(i, pixel_coords, float4(0.0f, 0.0f, 0.0f, 1.0f));
                 }
 
-                ScopedRng rng(pixel_coords, img_size, rng_buffer);
-
                 for (uint32_t i = 0; i < SAMPLES_PER_RUN; i++) {
+                    ScopedRng rng(i, pixel_coords, img_size, rng_buffer);
+
                     RayData ray = camera.get_ray(pixel_coords, rng);
                     ray_ids[ray.id] = ray.id + i * img_size.size();
                     ray_origins[ray.id] = sycl::float3(ray.org_x, ray.org_y, ray.org_z);
@@ -265,7 +276,7 @@ void WavefrontRenderer::shoot_rays(
                         run_ray_id % ctx.camera.img_size[0],
                         run_ray_id / ctx.camera.img_size[0]};
 
-                    ScopedRng rng(pixel_coords, img_size, rng_buffer);
+                    ScopedRng rng(run_index, pixel_coords, img_size, rng_buffer);
 
                     RTCRay ray = {
                         .org_x = ray_origin.x(),
@@ -288,10 +299,19 @@ void WavefrontRenderer::shoot_rays(
                         // Final value is computed. Write to image.
                         float4 final_color = float4(sycl::clamp(*res, 0.0f, 1.0f), 1.0f);
                         color_buffer.write(run_index, pixel_coords, final_color);
+                        /* if (run_index == 0 && pixel_coords.x() == 0 && */
+                        /*     pixel_coords.y() == 0) { */
+                        /*     ctx.os << "color: " << final_color << "\n"; */
+                        /* } */
                     } else if (depth == (max_depth - 1)) {
                         color_buffer.write(
                             run_index, pixel_coords, float4(0.0f, 0.0f, 0.0f, 1.0f)
                         );
+                        /* if (run_index == 0 && pixel_coords.x() == 0 && */
+                        /*     pixel_coords.y() == 0) { */
+                        /*     ctx.os << "color2: " << float4(0.0f, 0.0f, 0.0f, 1.0f) */
+                        /*            << "\n"; */
+                        /* } */
                     } else {
                         // New ray was generated
                         uint32_t ray_index = local_ray_count_ref.fetch_add(1);
