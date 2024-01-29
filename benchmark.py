@@ -9,6 +9,11 @@ depth_samples = [
     (30, 128),
     (40, 128),
     (50, 128),
+
+    (10, 32),
+    (10, 128),
+    (10, 256),
+    (10, 512),
 ]
 scenes = ['./assets/sponza.glb', './assets/minecraft.glb']
 renderers = ['-m', '-w']
